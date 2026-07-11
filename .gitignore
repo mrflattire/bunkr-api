@@ -1,0 +1,27 @@
+# Ignore Python cache folders
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore virtual environments (if you use them)
+venv/
+.venv/
+env/
+
+# Ignore local configuration and secrets
+.env
+.pytest_cache/
+.vscode/
+.idea/
+
+# Ignore all JSON files anywhere in the project
+*.json
+
+# Ignore the recon directory and everything inside it
+recon/
+
+# Ignore the tests directory and everything inside it
+tests/
+
+# Ignore the downloads directory and everything inside it
+downloads/
