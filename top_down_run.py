@@ -90,7 +90,7 @@ def parse_files_from_album(soup):
             name_tag = item.find('p', class_='theName')
             title = name_tag.get_text(strip=True) if name_tag else "Unknown Title"
             
-            size_tag = item.find('span', class_='theSize') or item.find(text=re.compile(r'\b(MB|GB|KB)\b'))
+            size_tag = item.find('span', class_='theSize') or item.find(string=re.compile(r'\b(MB|GB|KB)\b'))
             size_str = size_tag.get_text(strip=True) if size_tag else None
             
             files.append({
@@ -116,11 +116,18 @@ def parse_files_from_album(soup):
                 
     return files
 
+def slugify_filename(title):
+    """Sanitize the album title to make it a safe Windows/Linux filename"""
+    # Remove characters that are illegal in file names cross-platform
+    clean_title = re.sub(r'[\\/*?:"<>|]', "", title)
+    # Replace whitespace sequences with single underscores
+    clean_title = re.sub(r'\s+', "_", clean_title).strip("_")
+    return clean_title if clean_title else "album_output"
+
 async def run_scraper():
     args = parse_arguments()
     loop = asyncio.get_event_loop()
     
-    # Resolve search term from arguments or prompt fallback
     search_term = args.search
     if not search_term:
         search_term = await loop.run_in_executor(None, input, "[?] Enter search term: ")
@@ -135,7 +142,6 @@ async def run_scraper():
             # ====== STEP 1: SEARCH AND PARSE ALBUMS ======
             print(f"\n[*] STEP 1: Loading search results for '{search_term}'...")
             
-            # Formulate parameters dynamically
             query_params = {
                 'search': search_term,
                 'mode': 'broad',
@@ -232,7 +238,7 @@ async def run_scraper():
                 print(f"  {i}. {f_rec['title']}{size_str}{id_str}")
                 print(f"     {f_rec['href']}")
             
-            # Save comprehensive results mapping to file
+            # Save comprehensive results mapping to dynamic filename
             results = {
                 'search_term': search_term,
                 'selected_album': {
@@ -243,9 +249,10 @@ async def run_scraper():
                 'files_found': final_files
             }
             
-            with open("album_files.json", "w", encoding="utf-8") as f:
+            output_filename = f"{slugify_filename(selected_album['title'])}.json"
+            with open(output_filename, "w", encoding="utf-8") as f:
                 json.dump(results, f, indent=2)
-            print(f"\n[+] Enriched results saved out to album_files.json")
+            print(f"\n[+] Enriched results saved out to {output_filename}")
             
         except Exception as e:
             print(f"[-] Error: {e}")
