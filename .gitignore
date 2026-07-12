@@ -19,6 +19,7 @@ env/
 
 # Ignore the recon directory and everything inside it
 recon/
+recon_advanced/
 
 # Ignore the tests directory and everything inside it
 tests/
