@@ -93,6 +93,26 @@ def parse_albums_from_html(html):
     
     return unique_albums
 
+def extract_page_metadata(soup):
+    """Parses total global pages from the HTML pagination section at the bottom of the page"""
+    footer_div = soup.find('div', class_='text-xs text-[var(--text-soft)] mono')
+    if footer_div:
+        text = footer_div.get_text(strip=True)
+        match = re.search(r'Page\s+\d+\s+of\s+(\d+)', text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+            
+    # Fallback to the top page status indicator if the footer is missing
+    top_span = soup.find('span', class_='text-[var(--text)]')
+    if top_span:
+        # Check next sibling elements for the total page count format
+        parent_text = top_span.parent.get_text(strip=True) if top_span.parent else ""
+        match = re.search(r'page\s+\d+\s+of\s+(\d+)', parent_text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+            
+    return "Unknown"
+
 def parse_album_metadata(soup):
     """Extract full album size and total files from the visitors paragraph"""
     album_size = None
@@ -150,15 +170,15 @@ def slugify_filename(idx, title):
     base_name = clean_title if clean_title else "album_output"
     return f"{idx}_{base_name}"
 
-def display_current_page_and_choose(albums, current_page):
-    """
-    Renders the current batch of items from the specific server-side page.
-    Allows selection, next web page ('n'), previous web page ('p'), or quit ('q').
-    """
-    total_found = len(albums)
+def display_current_page_and_choose(albums, current_page, total_pages, search_term, mode):
+    """Renders the current batch of items from the specific server-side page with global page status mapping"""
+    total_loaded = len(albums)
+    display_search = f'"{search_term}"' if search_term else '"Homepage"'
+    
+    header_title = f"{display_search} Results Page {current_page} of {total_pages} ({total_loaded} albums loaded) Mode: {mode}"
     
     table = Table(
-        title=f"\n[bold cyan]Server Results Page {current_page} ({total_found} albums loaded)[/bold cyan]", 
+        title=f"\n[bold cyan]{header_title}[/bold cyan]", 
         title_justify="left", 
         style="dim white"
     )
@@ -178,7 +198,7 @@ def display_current_page_and_choose(albums, current_page):
     console.print(table)
     
     prompt_text = (
-        f"\n[bold cyan][?][/bold cyan] Enter item number (1-{total_found}), "
+        f"\n[bold cyan][?][/bold cyan] Enter album number (1-{total_loaded}), "
         f"[bold white]'n'[/bold white] for next page, "
         f"[bold white]'p'[/bold white] for previous page (or [bold red]q[/bold red] to quit)"
     )
@@ -189,11 +209,11 @@ def display_current_page_and_choose(albums, current_page):
 async def run_scraper():
     args = parse_arguments()
     
-    # 1. Resolve Target Search Term (Now allowing blanks)
+    # 1. Resolve Target Search Term (Allows blank entry for homepage scraping routing context)
     if args.search is not None:
         search_term = args.search
     else:
-        search_term = Prompt.ask("[bold cyan][?][/bold cyan] Enter search term [dim](Leave blank for homepage view)[/dim]").strip()
+        search_term = Prompt.ask("[bold cyan][?][/bold cyan] Enter search term [dim](Leave blank for homepage layout)[/dim]").strip()
 
     # 2. Resolve Search Mode Routing
     if args.mode:
@@ -233,7 +253,7 @@ async def run_scraper():
         album_number_index = None
 
         try:
-            # Main navigation pagination loop
+            # Main site web-pagination loops framework
             while True:
                 query_params = {
                     'search': search_term,
@@ -242,27 +262,29 @@ async def run_scraper():
                     'sort': url_sort
                 }
                 
-                # Append web page context only if past page 1 to keep query structures clean
+                # Append server-side web page query parameter if past the first page context
                 if current_page > 1:
                     query_params['page'] = str(current_page)
 
                 search_url = f"https://balbums.st/?{urllib.parse.urlencode(query_params)}"
-                console.print(f"\n[bold yellow][*][/bold yellow] STEP 1: Loading results from: [dim white]{search_url}[/dim white]...\n")
+                console.print(f"\n[bold yellow][*][/bold yellow] STEP 1: Loading structural items from: [dim white]{search_url}[/dim white]...\n")
                 
                 res = await fetch_with_retry_async(session, search_url)
+                soup = BeautifulSoup(res.text, 'html.parser')
+                
                 albums = parse_albums_from_html(res.text)
+                total_pages = extract_page_metadata(soup)
                 
                 if not albums:
                     console.print(f"[bold red][-][/bold red] No albums found on page {current_page}!")
                     if current_page > 1:
-                        console.print("[bold yellow][*][/bold yellow] Backing up to previous valid page...")
+                        console.print("[bold yellow][*][/bold yellow] Reverting layout to the previous valid active page frame context...")
                         current_page -= 1
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(1.5)
                         continue
                     return
                 
-                # Prompt loop choice context
-                choice = display_current_page_and_choose(albums, current_page)
+                choice = display_current_page_and_choose(albums, current_page, total_pages, search_term, url_mode)
                 
                 if choice in ['q', 'quit', 'exit']:
                     console.print("[bold yellow][*][/bold yellow] Session cancelled by user.")
@@ -276,21 +298,22 @@ async def run_scraper():
                     else:
                         console.print("[bold yellow][!][/bold yellow] You are already on the first page.")
                     continue
-                elif choice:
+                elif choice == '':
+                    # Default raw enter press to browse downstream page updates
+                    current_page += 1
+                    continue
+                else:
                     try:
                         choice_idx = int(choice) - 1
                         if 0 <= choice_idx < len(albums):
                             selected_album = albums[choice_idx]
-                            # Track absolute visual offset index position
+                            # Maintain global calculation index offsets
                             album_number_index = ((current_page - 1) * url_per) + (choice_idx + 1)
                             break
                         else:
                             console.print("[bold red][-][/bold red] Choice index is out of bounds.")
                     except ValueError:
-                        console.print("[bold red][-][/bold red] Invalid configuration option selected.")
-                else:
-                    # Treat raw empty Enter confirmation as a "Next Page" command trigger
-                    current_page += 1
+                        console.print("[bold red][-][/bold red] Invalid character or integer metric target parsed.")
 
             if not selected_album:
                 return
