@@ -5,6 +5,7 @@ import asyncio
 import json
 import urllib.parse
 from curl_cffi.requests import AsyncSession
+from curl_cffi.curl import CurlError  # Catch connection reset/TLS layer exceptions
 from bs4 import BeautifulSoup
 
 # Import rich components for UI rendering
@@ -42,6 +43,19 @@ def parse_arguments():
     parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="Total results requested per engine execution")
     parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Result array sorting metric")
     return parser.parse_args()
+
+async def fetch_with_retry_async(session, url, retries=3, delay=1, timeout=30):
+    """Helper method to execute GET requests with up to 3 automated retries upon CurlError 35 failures"""
+    for attempt in range(1, retries + 1):
+        try:
+            res = await session.get(url, timeout=timeout)
+            res.raise_for_status()
+            return res
+        except CurlError as e:
+            if attempt == retries:
+                raise e
+            console.print(f"  [bold yellow][!][/bold yellow] Network glitch caught ({e}). Retrying in {delay}s... (Attempt {attempt}/{retries})")
+            await asyncio.sleep(delay)
 
 def parse_albums_from_html(html):
     """Extract album information and file counts from search results page"""
@@ -165,9 +179,10 @@ def display_paginated_results_and_choose(albums):
         
         console.print(table)
         
+        is_last_page = end_idx >= total_found
         prompt_text = (
             f"\n[bold cyan][?][/bold cyan] Enter album number (1-{total_found}) "
-            f"or [bold white]Enter[/bold white] for next page (or [bold red]q[/bold red] to quit)" if end_idx < total_found else 
+            f"or [bold white]Enter[/bold white] for next page (or [bold red]q[/bold red] to quit)" if not is_last_page else 
             f"\n[bold cyan][?][/bold cyan] Enter album number (1-{total_found}) (or [bold red]q[/bold red] to quit)"
         )
         
@@ -177,6 +192,14 @@ def display_paginated_results_and_choose(albums):
             console.print("[bold yellow][*][/bold yellow] Session cancelled by user.")
             return None, None
             
+        # Catch accidental 'Enter' inputs on the final page and offer a second chance
+        if not choice and is_last_page:
+            console.print("[bold yellow][!][/bold yellow] You reached the end of the list. Please select a valid index number to parse.")
+            choice = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter album number (1-{total_found})", default="").strip().lower()
+            if choice in ['q', 'quit', 'exit']:
+                console.print("[bold yellow][*][/bold yellow] Session cancelled by user.")
+                return None, None
+
         if choice:
             try:
                 choice_idx = int(choice) - 1
@@ -240,8 +263,7 @@ async def run_scraper():
             search_url = f"https://balbums.st/?{urllib.parse.urlencode(query_params)}"
             console.print(f"\n[bold yellow][*][/bold yellow] STEP 1: Loading search results from: [dim white]{search_url}[/dim white]...\n")
             
-            res = await session.get(search_url, timeout=30)
-            res.raise_for_status()
+            res = await fetch_with_retry_async(session, search_url)
             
             albums = parse_albums_from_html(res.text)
             if not albums:
@@ -263,8 +285,7 @@ async def run_scraper():
             ))
             
             console.print(f"\n[bold yellow][*][/bold yellow] STEP 2: Navigating to optimized album view: [dim white]{optimized_url}[/dim white]...")
-            res = await session.get(optimized_url, timeout=30)
-            res.raise_for_status()
+            res = await fetch_with_retry_async(session, optimized_url)
             album_soup = BeautifulSoup(res.text, 'html.parser')
             
             album_size, total_files = parse_album_metadata(album_soup)

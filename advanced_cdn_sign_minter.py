@@ -1,9 +1,11 @@
 import json
+import time
 import argparse
 import urllib.parse
 from pathlib import Path
 from datetime import datetime, timedelta
 from curl_cffi import requests
+from curl_cffi.curl import CurlError  # Catch connection reset/TLS level exceptions
 import urllib3
 
 from rich.console import Console
@@ -23,6 +25,21 @@ def parse_arguments():
     )
     return parser.parse_args()
 
+def execute_request_with_retry(session, url, method="GET", json_payload=None, headers=None, retries=3, delay=1, timeout=30):
+    """Wrapper to handle synchronous request executions with unified CurlError 35 fallback loops"""
+    for attempt in range(1, retries + 1):
+        try:
+            if method.upper() == "POST":
+                res = session.post(url, json=json_payload, headers=headers, verify=False, timeout=timeout)
+            else:
+                res = session.get(url, headers=headers, timeout=timeout)
+            res.raise_for_status()
+            return res
+        except CurlError as e:
+            if attempt == retries:
+                raise e
+            time.sleep(delay)
+
 def mint_cdn_url(session, file_id):
     str_file_id = str(file_id)
     headers = {
@@ -34,9 +51,9 @@ def mint_cdn_url(session, file_id):
     meta_url = "https://dl.bunkr.cr/api/_001_v2"
     payload = {"id": str_file_id}
     
+    # --- Step 1: Query Metadata API with Retry wrapper ---
     try:
-        meta_res = session.post(meta_url, json=payload, headers=headers, verify=False)
-        meta_res.raise_for_status()
+        meta_res = execute_request_with_retry(session, meta_url, method="POST", json_payload=payload, headers=headers)
         meta_data = meta_res.json()
         
         cdn_host = meta_data["mediafiles"]
@@ -46,12 +63,12 @@ def mint_cdn_url(session, file_id):
         console.print(f"    [bold red][-][/bold red] Metadata lookup failed for ID [dim]{str_file_id}[/dim]: {e}")
         return None
 
+    # --- Step 2: Request Dynamic Validation Token with Retry wrapper ---
     encoded_path = urllib.parse.quote(storage_path)
     sign_url = f"https://glb-apisign.cdn.cr/sign?path={encoded_path}"
     
     try:
-        sign_res = session.get(sign_url, headers=headers)
-        sign_res.raise_for_status()
+        sign_res = execute_request_with_retry(session, sign_url, method="GET", headers=headers)
         sign_data = sign_res.json()
         
         token = sign_data["token"]
