@@ -38,7 +38,7 @@ VALID_COUNTS = [20, 40, 60, 100]
 def parse_arguments():
     """Parse command line arguments for the advanced script"""
     parser = argparse.ArgumentParser(description="Album search and deep parser utility.")
-    parser.add_argument("search", nargs="?", help="The targeted search term query string")
+    parser.add_argument("search", nargs="?", default=None, help="The targeted search term query string")
     parser.add_argument("-m", "--mode", choices=["broad", "strict", "fuzzy", "substring", "whole"], help="Filter execution mode")
     parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="Total results requested per engine execution")
     parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Result array sorting metric")
@@ -150,79 +150,52 @@ def slugify_filename(idx, title):
     base_name = clean_title if clean_title else "album_output"
     return f"{idx}_{base_name}"
 
-def display_paginated_results_and_choose(albums):
-    """Render results using rich table pagination and accept input choice. Returns (album, choice_num)"""
+def display_current_page_and_choose(albums, current_page):
+    """
+    Renders the current batch of items from the specific server-side page.
+    Allows selection, next web page ('n'), previous web page ('p'), or quit ('q').
+    """
     total_found = len(albums)
-    PAGE_SIZE = 10
     
-    for start_idx in range(0, total_found, PAGE_SIZE):
-        end_idx = start_idx + PAGE_SIZE
-        chunk = albums[start_idx:end_idx]
-        
-        table = Table(
-            title=f"\n[bold cyan]Found Albums ({start_idx + 1} to {min(end_idx, total_found)} of {total_found})[/bold cyan]", 
-            title_justify="left", 
-            style="dim white"
+    table = Table(
+        title=f"\n[bold cyan]Server Results Page {current_page} ({total_found} albums loaded)[/bold cyan]", 
+        title_justify="left", 
+        style="dim white"
+    )
+    table.add_column("#", justify="right", style="magenta", no_wrap=True)
+    table.add_column("Album Title", style="white")
+    table.add_column("Files (Est.)", justify="center", style="green")
+    table.add_column("URL", style="blue")
+    
+    for i, album in enumerate(albums, start=1):
+        table.add_row(
+            str(i), 
+            album.get("title", "Unknown")[:60], 
+            album.get("file_count", "0 files"), 
+            album.get("url", "")
         )
-        table.add_column("#", justify="right", style="magenta", no_wrap=True)
-        table.add_column("Album Title", style="white")
-        table.add_column("Files (Est.)", justify="center", style="green")
-        table.add_column("URL", style="blue")
-        
-        for i, album in enumerate(chunk, start=start_idx + 1):
-            table.add_row(
-                str(i), 
-                album.get("title", "Unknown")[:60], 
-                album.get("file_count", "0 files"), 
-                album.get("url", "")
-            )
-        
-        console.print(table)
-        
-        is_last_page = end_idx >= total_found
-        prompt_text = (
-            f"\n[bold cyan][?][/bold cyan] Enter album number (1-{total_found}) "
-            f"or [bold white]Enter[/bold white] for next page (or [bold red]q[/bold red] to quit)" if not is_last_page else 
-            f"\n[bold cyan][?][/bold cyan] Enter album number (1-{total_found}) (or [bold red]q[/bold red] to quit)"
-        )
-        
-        choice = Prompt.ask(prompt_text, default="").strip().lower()
-        
-        if choice in ['q', 'quit', 'exit']:
-            console.print("[bold yellow][*][/bold yellow] Session cancelled by user.")
-            return None, None
-            
-        # Catch accidental 'Enter' inputs on the final page and offer a second chance
-        if not choice and is_last_page:
-            console.print("[bold yellow][!][/bold yellow] You reached the end of the list. Please select a valid index number to parse.")
-            choice = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter album number (1-{total_found})", default="").strip().lower()
-            if choice in ['q', 'quit', 'exit']:
-                console.print("[bold yellow][*][/bold yellow] Session cancelled by user.")
-                return None, None
-
-        if choice:
-            try:
-                choice_idx = int(choice) - 1
-                if 0 <= choice_idx < total_found:
-                    return albums[choice_idx], choice_idx + 1
-                else:
-                    console.print("[bold red][-][/bold red] Choice index is out of bounds.")
-                    return None, None
-            except ValueError:
-                console.print("[bold red][-][/bold red] Invalid selection digit.")
-                return None, None
-                
-    console.print("[bold red][-][/bold red] End of results reached without selection.")
-    return None, None
+    
+    console.print(table)
+    
+    prompt_text = (
+        f"\n[bold cyan][?][/bold cyan] Enter item number (1-{total_found}), "
+        f"[bold white]'n'[/bold white] for next page, "
+        f"[bold white]'p'[/bold white] for previous page (or [bold red]q[/bold red] to quit)"
+    )
+    
+    choice = Prompt.ask(prompt_text, default="").strip().lower()
+    return choice
 
 async def run_scraper():
     args = parse_arguments()
     
-    search_term = args.search if args.search else Prompt.ask("[bold cyan][?][/bold cyan] Enter search term").strip()
-    if not search_term:
-        console.print("[bold red][-][/bold red] Error: Search term cannot be empty.")
-        sys.exit(1)
+    # 1. Resolve Target Search Term (Now allowing blanks)
+    if args.search is not None:
+        search_term = args.search
+    else:
+        search_term = Prompt.ask("[bold cyan][?][/bold cyan] Enter search term [dim](Leave blank for homepage view)[/dim]").strip()
 
+    # 2. Resolve Search Mode Routing
     if args.mode:
         url_mode = SEARCH_MODES[args.mode]
     else:
@@ -233,6 +206,7 @@ async def run_scraper():
         ).lower()
         url_mode = SEARCH_MODES[mode_choice]
 
+    # 3. Resolve Target Size Selection
     if args.per:
         url_per = args.per
     else:
@@ -242,6 +216,7 @@ async def run_scraper():
             default=20
         )
 
+    # 4. Resolve Result Sorting Scheme Selection
     if args.sort:
         url_sort = SORT_TYPES[args.sort]
     else:
@@ -253,29 +228,76 @@ async def run_scraper():
         url_sort = SORT_TYPES[sort_choice]
 
     async with AsyncSession(impersonate="chrome") as session:
+        current_page = 1
+        selected_album = None
+        album_number_index = None
+
         try:
-            query_params = {
-                'search': search_term,
-                'mode': url_mode,
-                'per': str(url_per),
-                'sort': url_sort
-            }
-            search_url = f"https://balbums.st/?{urllib.parse.urlencode(query_params)}"
-            console.print(f"\n[bold yellow][*][/bold yellow] STEP 1: Loading search results from: [dim white]{search_url}[/dim white]...\n")
-            
-            res = await fetch_with_retry_async(session, search_url)
-            
-            albums = parse_albums_from_html(res.text)
-            if not albums:
-                console.print("[bold red][-][/bold red] No albums found matching your query criteria!")
-                return
-            
-            selected_album, album_number = display_paginated_results_and_choose(albums)
+            # Main navigation pagination loop
+            while True:
+                query_params = {
+                    'search': search_term,
+                    'mode': url_mode,
+                    'per': str(url_per),
+                    'sort': url_sort
+                }
+                
+                # Append web page context only if past page 1 to keep query structures clean
+                if current_page > 1:
+                    query_params['page'] = str(current_page)
+
+                search_url = f"https://balbums.st/?{urllib.parse.urlencode(query_params)}"
+                console.print(f"\n[bold yellow][*][/bold yellow] STEP 1: Loading results from: [dim white]{search_url}[/dim white]...\n")
+                
+                res = await fetch_with_retry_async(session, search_url)
+                albums = parse_albums_from_html(res.text)
+                
+                if not albums:
+                    console.print(f"[bold red][-][/bold red] No albums found on page {current_page}!")
+                    if current_page > 1:
+                        console.print("[bold yellow][*][/bold yellow] Backing up to previous valid page...")
+                        current_page -= 1
+                        await asyncio.sleep(1)
+                        continue
+                    return
+                
+                # Prompt loop choice context
+                choice = display_current_page_and_choose(albums, current_page)
+                
+                if choice in ['q', 'quit', 'exit']:
+                    console.print("[bold yellow][*][/bold yellow] Session cancelled by user.")
+                    return
+                elif choice == 'n':
+                    current_page += 1
+                    continue
+                elif choice == 'p':
+                    if current_page > 1:
+                        current_page -= 1
+                    else:
+                        console.print("[bold yellow][!][/bold yellow] You are already on the first page.")
+                    continue
+                elif choice:
+                    try:
+                        choice_idx = int(choice) - 1
+                        if 0 <= choice_idx < len(albums):
+                            selected_album = albums[choice_idx]
+                            # Track absolute visual offset index position
+                            album_number_index = ((current_page - 1) * url_per) + (choice_idx + 1)
+                            break
+                        else:
+                            console.print("[bold red][-][/bold red] Choice index is out of bounds.")
+                    except ValueError:
+                        console.print("[bold red][-][/bold red] Invalid configuration option selected.")
+                else:
+                    # Treat raw empty Enter confirmation as a "Next Page" command trigger
+                    current_page += 1
+
             if not selected_album:
                 return
             
-            console.print(f"\n[bold green][+][/bold green] Selected: #[bold yellow]{album_number}[/bold yellow] - [bold white]{selected_album['title']}[/bold white]")
+            console.print(f"\n[bold green][+][/bold green] Selected: #[bold yellow]{album_number_index}[/bold yellow] - [bold white]{selected_album['title']}[/bold white]")
             
+            # ====== STEP 2: NAVIGATE TO ALBUM ======
             parsed_album_url = urllib.parse.urlparse(selected_album['url'])
             album_params = dict(urllib.parse.parse_qsl(parsed_album_url.query))
             album_params['advanced'] = '1'
@@ -304,14 +326,14 @@ async def run_scraper():
                 'search_term': search_term,
                 'selected_album': {
                     **selected_album,
-                    'album_index_number': album_number,
+                    'album_index_number': album_number_index,
                     'aggregate_size': album_size,
                     'clean_file_count': total_files if total_files else f"{len(final_files)} files"
                 },
                 'files_found': final_files
             }
             
-            output_filename = f"{slugify_filename(album_number, selected_album['title'])}.json"
+            output_filename = f"{slugify_filename(album_number_index, selected_album['title'])}.json"
             with open(output_filename, "w", encoding="utf-8") as f:
                 json.dump(results, f, indent=2, ensure_ascii=False)
             console.print(f"\n[bold green][+][/bold green] Enriched results saved out to [bold white]{output_filename}[/bold white]")
