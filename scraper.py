@@ -236,7 +236,7 @@ def display_current_page_and_choose(albums, current_page, total_pages, search_te
         header_title = f"Top Trending {search_term.capitalize()} Page {current_page} (Items {start_index}-{end_index} loaded)"
     else:
         display_search = f'"{search_term}"' if search_term else '"Homepage"'
-        header_title = f"{display_search} Results Page {current_page} of {total_pages} (Items {start_index}-{end_index} loaded) .mode: {mode}"
+        header_title = f"{display_search} Results Page {current_page} of {total_pages} (Items {start_index}-{end_index} loaded) Mode: {mode}"
     
     table = Table(
         title=f"\n[bold cyan]{header_title}[/bold cyan]", 

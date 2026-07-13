@@ -141,14 +141,14 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
 def read_and_render_json(filepath):
     if not os.path.exists(filepath):
         console.print(f"[bold red][-][/bold red] Error: Target payload mapping path '{filepath}' not discovered.")
-        return
+        return False
 
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
         console.print(f"[bold red][-][/bold red] Parsing failure inside file: {e}")
-        return
+        return False
 
     search_term = data.get("search_term", "N/A")
     album = data.get("selected_album", {})
@@ -163,7 +163,7 @@ def read_and_render_json(filepath):
 
     if not all_files:
         console.print("[bold yellow][!][/bold yellow] No item records discovered inside target sequence tracking arrays.")
-        return
+        return True
 
     page_size = 10
     total_items = len(all_files)
@@ -213,7 +213,7 @@ def read_and_render_json(filepath):
             current_page -= 1
         elif nav_action == "3":
             console.print(f"\n[bold yellow][*][/bold yellow] Launching token minter: [dim white]python minter.py --input {filepath}[/dim white]")
-            os.system(f"python advanced_async_cdn_sign_minter.py --input {filepath}")
+            os.system(f"python minter.py --input {filepath}")
             console.print("[bold green][+][/bold green] Minter execution finished. Reloading dataset...")
             
             try:
@@ -228,9 +228,32 @@ def read_and_render_json(filepath):
                 console.print(f"[bold red][-][/bold red] Failed to reload JSON payload: {e}")
                 
             time.sleep(1)
+    return True
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        console.print("[bold yellow][!][/bold yellow] Usage: [green]python reader.py <path_to_json_file>[/green]")
-    else:
+    # Check if file argument was passed directly via CLI execution mapping
+    if len(sys.argv) >= 2:
         read_and_render_json(sys.argv[1])
+    else:
+        # Fallback to interactive prompt mode if no flags are provided
+        while True:
+            try:
+                target_input = Prompt.ask("[bold cyan][?][/bold cyan] Enter path to target payload mapping JSON file (or 'q' to exit)").strip()
+                if target_input.lower() in ('q', 'quit', 'exit'):
+                    break
+                    
+                # Clean enclosing quotes if dragged and dropped directly onto terminal frames
+                target_input = target_input.strip("'\"")
+                
+                if not target_input:
+                    continue
+                    
+                if os.path.exists(target_input):
+                    success = read_and_render_json(target_input)
+                    if success:
+                        break
+                else:
+                    console.print(f"[bold red][-][/bold red] Error: Mapping data framework sequence at '{target_input}' not found.")
+            except KeyboardInterrupt:
+                console.print("\n[bold yellow][!][/bold yellow] Reader session terminated cleanly.")
+                break
