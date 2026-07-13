@@ -224,15 +224,19 @@ def slugify_filename(idx, title):
     base_name = clean_title if clean_title else "album_output"
     return f"{idx}_{base_name}"
 
-def display_current_page_and_choose(albums, current_page, total_pages, search_term, mode, context_type="search"):
-    """Renders the current batch of items with unified context status headers"""
+def display_current_page_and_choose(albums, current_page, total_pages, search_term, mode, context_type="search", per_page=20):
+    """Renders the current batch of items with unified context status headers and accurate sequential row counts across pages"""
     total_loaded = len(albums)
     
+    # Calculate the precise start and end index limits matching background state counters
+    start_index = ((current_page - 1) * per_page) + 1
+    end_index = start_index + total_loaded - 1
+    
     if context_type == "top":
-        header_title = f"Top Trending {search_term.capitalize()} Page {current_page} ({total_loaded} items loaded)"
+        header_title = f"Top Trending {search_term.capitalize()} Page {current_page} (Items {start_index}-{end_index} loaded)"
     else:
         display_search = f'"{search_term}"' if search_term else '"Homepage"'
-        header_title = f"{display_search} Results Page {current_page} of {total_pages} ({total_loaded} albums loaded) Mode: {mode}"
+        header_title = f"{display_search} Results Page {current_page} of {total_pages} (Items {start_index}-{end_index} loaded) .mode: {mode}"
     
     table = Table(
         title=f"\n[bold cyan]{header_title}[/bold cyan]", 
@@ -244,7 +248,8 @@ def display_current_page_and_choose(albums, current_page, total_pages, search_te
     table.add_column("Files (Est.)", justify="center", style="green")
     table.add_column("Direct Content Link", style="blue")
     
-    for i, album in enumerate(albums, start=1):
+    # Inject start_index directly into the visual enumeration routine
+    for i, album in enumerate(albums, start=start_index):
         table.add_row(
             str(i), 
             album.get("title", "Unknown")[:60], 
@@ -255,7 +260,7 @@ def display_current_page_and_choose(albums, current_page, total_pages, search_te
     console.print(table)
     
     prompt_text = (
-        f"\n[bold cyan][?][/bold cyan] Enter selection number (1-{total_loaded}), "
+        f"\n[bold cyan][?][/bold cyan] Enter selection number ({start_index}-{end_index}), "
         f"[bold white]'n'[/bold white] for next page, "
         f"[bold white]'p'[/bold white] for previous page (or [bold red]q[/bold red] to quit)"
     )
@@ -286,7 +291,6 @@ async def run_top_engine(session, category: str):
         res = await fetch_with_retry_async(session, top_url)
         items = parse_top_items_from_html(res.text, category)
         
-        # BREAKPOINT CONDITION 1: Scraped page returns completely empty dataset
         if not items:
             console.print(f"[bold red][-][/bold red] No items found on trending page {current_page}!")
             if current_page > 1:
@@ -296,17 +300,16 @@ async def run_top_engine(session, category: str):
                 continue
             return
             
-        # Warn visually if hitting a short terminal grid segment
         if len(items) < 15:
             console.print("[bold yellow][!][/bold yellow] Partial index sequence flagged. End of list imminent.")
             
-        choice = display_current_page_and_choose(items, current_page, "Unknown", lapse_choice, None, context_type="top")
+        # Top page size limits are locked strictly at 15 items per response frame
+        choice = display_current_page_and_choose(items, current_page, "Unknown", lapse_choice, None, context_type="top", per_page=15)
         
         if choice in ['q', 'quit', 'exit']:
             console.print("[bold yellow][*][/bold yellow] Trending browse session closed.")
             return
         elif choice == 'n':
-            # BREAKPOINT CONDITION 2: Refuse downstream incrementation if page layout is partial
             if len(items) < 15:
                 console.print("[bold red][-][/bold red] Cannot advance. End of available data reached.")
                 await asyncio.sleep(1.5)
@@ -328,20 +331,25 @@ async def run_top_engine(session, category: str):
             continue
         else:
             try:
-                choice_idx = int(choice) - 1
-                if 0 <= choice_idx < len(items):
-                    selected_item = items[choice_idx]
-                    item_number_index = ((current_page - 1) * 15) + (choice_idx + 1)
+                choice_idx = int(choice)
+                start_boundary = ((current_page - 1) * 15) + 1
+                end_boundary = start_boundary + len(items) - 1
+                
+                # Check user entry directly against active global bounding thresholds
+                if start_boundary <= choice_idx <= end_boundary:
+                    # Convert the absolute global input index safely back to internal relative array slot
+                    relative_idx = choice_idx - start_boundary
+                    selected_item = items[relative_idx]
+                    item_number_index = choice_idx
                     break
                 else:
-                    console.print("[bold red][-][/bold red] Selected number out of bounds.")
+                    console.print(f"[bold red][-][/bold red] Selection out of bounds. Enter a number between {start_boundary}-{end_boundary}.")
             except ValueError:
                 console.print("[bold red][-][/bold red] Invalid character command selection.")
 
     if not selected_item:
         return
         
-    # Execute structural pipeline handoff to run deep resolutions
     await execute_deep_resolution(session, selected_item, item_number_index, f"top_{category}_{lapse_choice}")
 
 async def execute_deep_resolution(session, selected_album, album_number_index, search_term):
@@ -396,7 +404,6 @@ async def run_scraper():
         if args.top is not None:
             category = args.top
             
-            # If the user typed just "--top", prompt them interactively for the choice
             if category == "prompt":
                 category = Prompt.ask(
                     "[bold cyan][?][/bold cyan] Select trending category", 
@@ -481,7 +488,8 @@ async def run_scraper():
                         continue
                     return
                 
-                choice = display_current_page_and_choose(albums, current_page, total_pages, search_term, url_mode, context_type="search")
+                # Pass the custom dynamic per_page calculation directly to mirror table elements
+                choice = display_current_page_and_choose(albums, current_page, total_pages, search_term, url_mode, context_type="search", per_page=url_per)
                 
                 if choice in ['q', 'quit', 'exit']:
                     console.print("[bold yellow][*][/bold yellow] Session cancelled by user.")
@@ -500,20 +508,23 @@ async def run_scraper():
                     continue
                 else:
                     try:
-                        choice_idx = int(choice) - 1
-                        if 0 <= choice_idx < len(albums):
-                            selected_album = albums[choice_idx]
-                            album_number_index = ((current_page - 1) * url_per) + (choice_idx + 1)
+                        choice_idx = int(choice)
+                        start_boundary = ((current_page - 1) * url_per) + 1
+                        end_boundary = start_boundary + len(albums) - 1
+                        
+                        if start_boundary <= choice_idx <= end_boundary:
+                            relative_idx = choice_idx - start_boundary
+                            selected_album = albums[relative_idx]
+                            album_number_index = choice_idx
                             break
                         else:
-                            console.print("[bold red][-][/bold red] Choice index is out of bounds.")
+                            console.print(f"[bold red][-][/bold red] Selection out of bounds. Enter a number between {start_boundary}-{end_boundary}.")
                     except ValueError:
                         console.print("[bold red][-][/bold red] Invalid command options entered.")
 
             if not selected_album:
                 return
                 
-            # Direct uniform code resolution
             await execute_deep_resolution(session, selected_album, album_number_index, search_term)
             
         except Exception as e:
