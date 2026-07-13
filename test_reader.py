@@ -68,11 +68,11 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
     if nav_hints:
         console.print(f" Navigation -> {' | '.join(nav_hints)}")
         
-    console.print(" [bold white]1.[/bold white] Forward all asset keys to [green]downloader.py[/green]")
+    console.print(" [bold white]1.[/bold white] Forward all asset keys to [green]test_inputs.py[/green]")
     console.print(" [bold white]2.[/bold white] Copy a specific item link directly to console standard output")
     console.print(" [bold white]3.[/bold white] Remint expired tokens via [green]advanced_async_cdn_sign_minter.py[/green]")
     console.print(" [bold white]4.[/bold white] Stream a specific asset target directly via [green]mpv[/green]")
-    console.print(" [bold white]5.[/bold white] Download a specific target asset immediately via [green]downloader.py[/green]")
+    console.print(" [bold white]5.[/bold white] Download target asset(s) via [green]test_inputs.py[/green] [dim] (Accepts: 5 | 3,7,12 | 1-10)[/dim]")
     console.print(" [bold white]q.[/bold white] Close reader utility context frame")
     
     choices = ["1", "2", "3", "4", "5", "q"]
@@ -85,11 +85,16 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
         return action
         
     if action == "1":
-        console.print(f"\n[bold yellow][*][/bold yellow] Handing file over to execution context: [dim white]python downloader.py {filepath}[/dim white]")
-        os.system(f"python downloader_workers.py --input {filepath}")
-    elif action in ("2", "4", "5"):
+        console.print(f"\n[bold yellow][*][/bold yellow] Handing file over to execution context: [dim white]python test_inputs.py {filepath}[/dim white]")
         try:
-            # Allow user to pick the literal global `#` row number shown in the table
+            os.system(f"python test_inputs.py --input {filepath}")
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow][!][/bold yellow] test_inputs pipeline interrupted execution context cleanly. Returning to dashboard...")
+            time.sleep(1)
+            
+    elif action in ("2", "4"):
+        try:
+            # Traditional single-item row tracking logic for copy/stream
             end_idx = start_idx + len(page_files) - 1
             selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item row index ({start_idx}-{end_idx})")
             idx = int(selection) - 1
@@ -100,41 +105,37 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
                 if action == "2":
                     console.print(f"\n[bold green][+][/bold green] Extracted Asset Stream Endpoint:\n\n[bold white]{target_url}[/bold white]\n")
                     Prompt.ask("[dim white]Press Enter to continue...[/dim white]")
-                elif action in ("4", "5"):
+                elif action == "4":
                     if "Expired" in parse_and_check_expiry(chosen_file.get("signed_cdn_url")):
                         console.print("[bold red][-][/bold red] Error: Cannot process an expired token asset. Remint tokens first.")
                         time.sleep(2)
-                    elif action == "4":
+                    else:
                         console.print(f"\n[bold yellow][*][/bold yellow] Initializing mpv asset pipeline for: [white]{chosen_file.get('original') or chosen_file.get('title')}[/white]")
-                        # Pass the link directly to mpv using system execution context
                         os.system(f'mpv "{target_url}"')
-                    elif action == "5":
-                        asset_title = chosen_file.get('original') or chosen_file.get('title') or f"file_{idx+1}"
-                        console.print(f"\n[bold yellow][*][/bold yellow] Isolating download context for: [white]{asset_title}[/white]")
-                        
-                        # Generate a isolated temporary tracking schema context for the downloader engine
-                        temp_payload = {
-                            "search_term": "Single Asset Mode",
-                            "selected_album": {"title": "Single Asset Context Extraction"},
-                            "files_found": [chosen_file]
-                        }
-                        temp_path = Path(".single_download_queue.json")
-                        with open(temp_path, "w", encoding="utf-8") as tf:
-                            json.dump(temp_payload, tf, indent=4, ensure_ascii=False)
-                        
-                        try:
-                            # Force execution mapping onto the concurrent orchestration engine running 1 targeted task slot
-                            os.system(f"python downloader_workers.py --input {str(temp_path)} --workers 1")
-                        finally:
-                            if temp_path.exists():
-                                temp_path.unlink()
-                            time.sleep(1)
             else:
                 console.print("[bold red][-][/bold red] Selected row boundary error limits crossed.")
                 time.sleep(1.5)
         except ValueError:
             console.print("[bold red][-][/bold red] Invalid selection entry pattern initialized.")
             time.sleep(1.5)
+
+    elif action == "5":
+        # Multi-format target filter selection routing
+        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](e.g. 5 or 3,7,12 or 1-10)[/dim]").strip()
+        if not selection:
+            console.print("[bold red][-][/bold red] Empty target configuration passed.")
+            time.sleep(1)
+            return None
+
+        console.print(f"\n[bold yellow][*][/bold yellow] Launching targeted execution filter payload: [white]-n {selection}[/white]")
+        
+        try:
+            # Forward the raw string input directly onto test_inputs.py's robust -n implementation
+            os.system(f"python test_inputs.py --input {filepath} -n {selection}")
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow][!][/bold yellow] Targeted selection run aborted via keystroke. Returning to dashboard...")
+        time.sleep(1)
+
     return None
 
 def read_and_render_json(filepath):
@@ -153,7 +154,6 @@ def read_and_render_json(filepath):
     album = data.get("selected_album", {})
     all_files = data.get("files_found", [])
 
-    # Step 1: Render Global Header Metadata Block Panel ONCE at startup
     summary_text = (
         f"[bold cyan]Source Origin Context:[/bold cyan] {search_term if search_term else '[dim white]Direct Browsing Link[/dim white]'}\n"
         f"[bold cyan]Album Global Index:[/bold cyan] #{album.get('album_index_number', 'N/A')}\n"
@@ -165,20 +165,16 @@ def read_and_render_json(filepath):
         console.print("[bold yellow][!][/bold yellow] No item records discovered inside target sequence tracking arrays.")
         return
 
-    # Pagination configuration
     page_size = 10
     total_items = len(all_files)
     total_pages = (total_items + page_size - 1) // page_size
     current_page = 1
 
-    # --- Inline Stream Pagination Loop ---
     while True:
-        # Mathematical slice for current page items
         start_idx = (current_page - 1) * page_size
         end_idx = start_idx + page_size
         page_files = all_files[start_idx:end_idx]
 
-        # Step 2: Render Assets Table Matrix for current slice
         table = Table(
             title=f"\n[bold magenta]Deep Resolved Assets Inventory (Page {current_page}/{total_pages} | Items {start_idx + 1}-{min(end_idx, total_items)} of {total_items})[/bold magenta]", 
             style="dim white"
@@ -207,7 +203,6 @@ def read_and_render_json(filepath):
 
         console.print(table)
         
-        # Step 3: Trigger Interactive Options
         nav_action = show_interactive_options(filepath, all_files, page_files, start_idx + 1, total_pages, current_page)
         
         if nav_action == "q":
