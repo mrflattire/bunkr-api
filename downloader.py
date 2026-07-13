@@ -57,13 +57,8 @@ def download_assets():
             print(f"[{index}/{total_files}] Skipping '{title[:40]}' - No active signed URL found.")
             continue
 
-        # Sanitize name and build final output path destination
+        # Sanitize name directly as provided in the JSON payload
         safe_name = sanitize_filename(title)
-        
-        # Fallback extension handling if missing from parsed titles
-        if not any(safe_name.lower().endswith(ext) for ext in [".mp4", ".mov", ".mkv", ".png", ".jpg", ".jpeg"]):
-            safe_name += ".mp4"
-            
         dest = DEFAULT_OUTPUT_DIR / safe_name
         
         print(f"[{index}/{total_files}] Starting download for: {safe_name}")
