@@ -246,7 +246,7 @@ def display_current_page_and_choose(albums, current_page, total_pages, search_te
     table.add_column("#", justify="right", style="magenta", no_wrap=True)
     table.add_column("Title / Target Item", style="white")
     table.add_column("Files (Est.)", justify="center", style="green")
-    table.add_column("Direct Content Link", style="blue")
+    table.add_column("Source Page Link", style="blue")
     
     # Inject start_index directly into the visual enumeration routine
     for i, album in enumerate(albums, start=start_index):
