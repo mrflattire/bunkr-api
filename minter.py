@@ -3,6 +3,7 @@ import asyncio
 import argparse
 import urllib.parse
 import sys
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from curl_cffi.requests import AsyncSession
@@ -11,6 +12,7 @@ import urllib3
 
 from rich.console import Console
 from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.prompt import Prompt
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 console = Console()
@@ -21,10 +23,45 @@ def parse_arguments():
     parser.add_argument(
         '-i', '--input',
         type=str,
-        required=True,
+        required=False,  # Made optional to allow the interactive prompt fallback
         help="Path to the custom indexed album JSON file (e.g., 3_album_name.json)."
     )
     return parser.parse_args()
+
+def clean_dragged_path(raw: str) -> str:
+    """
+    Normalizes a path typed or drag-and-dropped into the terminal.
+    Handles surrounding whitespace, quotes, and backslash-escaped spaces.
+    """
+    text = raw.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        text = text[1:-1].strip()
+    text = text.replace("\\ ", " ")
+    return text
+
+def prompt_for_input():
+    """
+    Scans the working directory for payload JSONs, prints them out cleanly,
+    and then prompts the user for the input path.
+    """
+    # 1. Scan and print local .json files
+    try:
+        json_files = [f for f in os.listdir('.') if f.endswith('.json') and os.path.isfile(f)]
+        if json_files:
+            console.print("\n[bold magenta][*] Discovered payload JSON targets in working directory:[/bold magenta]")
+            for f in sorted(json_files):
+                console.print(f"  • [yellow]{f}[/yellow]")
+            console.print()
+    except Exception as e:
+        console.print(f"[bold red][-][/bold red] Warning: Could not scan directory for JSON files: {e}")
+
+    # 2. Prompt for path to the album JSON
+    while True:
+        raw = Prompt.ask("[bold cyan][?][/bold cyan] Path to the album JSON file")
+        candidate = Path(clean_dragged_path(raw)).expanduser()
+        if candidate.exists() and candidate.is_file():
+            return candidate
+        console.print(f"[bold red][-][/bold red] Error: '{candidate}' doesn't exist or isn't a file. Try again.")
 
 async def execute_request_with_retry_async(session, url, method="GET", json_payload=None, headers=None, retries=3, delay=1, timeout=30):
     """Wrapper to handle asynchronous request executions with unified CurlError 35 fallback loops"""
@@ -100,8 +137,16 @@ async def mint_cdn_url_async(session, file_item, progress_bar, task_id):
     return True
 
 async def batch_process_signatures_async():
-    args = parse_arguments()
-    input_json_path = Path(args.input)
+    # Detect if we need to fall back to the interactive prompt
+    if len(sys.argv) == 1:
+        input_json_path = prompt_for_input()
+    else:
+        args = parse_arguments()
+        # Fallback to interactive prompt if the input flag was somehow passed as empty/None
+        if not args.input:
+            input_json_path = prompt_for_input()
+        else:
+            input_json_path = Path(clean_dragged_path(args.input)).expanduser()
 
     if not input_json_path.exists():
         console.print(f"[bold red][-][/bold red] Error: Could not find '[bold white]{input_json_path}[/bold white]'.")

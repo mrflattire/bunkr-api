@@ -8,9 +8,12 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from rich.prompt import Prompt
+from rich.console import Console
+
+console = Console()
 
 # Paths config
-DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "bunkr_downloads"
+DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "youtube_downloads"
 
 # Thread-safe terminal layout lock
 stdout_lock = threading.Lock()
@@ -55,8 +58,8 @@ def parse_arguments():
     parser.add_argument(
         '-w', '--workers',
         type=int,
-        default=1,
-        help="Number of concurrent download worker threads to spawn (default: 1)."
+        default=None,  # Set to None to cleanly identify when no CLI argument is given
+        help="Number of concurrent download worker threads to spawn."
     )
     parser.add_argument(
         '-n', '--number',
@@ -113,18 +116,53 @@ def clean_dragged_path(raw: str) -> str:
     return text
 
 
-def prompt_for_input_path() -> Path:
+def prompt_for_inputs():
     """
-    Interactively asks for the JSON queue file when --input wasn't supplied
-    on the command line. Keeps re-prompting on a bad path instead of
-    crashing, and tolerates both plain paths and quoted/drag-and-dropped ones.
+    Scans the working directory for payload JSONs, prints them out cleanly,
+    and then prompts the user dynamically for input path, items selection, and workers[cite: 5].
     """
+    # 1. Scan and print local .json files[cite: 5]
+    try:
+        json_files = [f for f in os.listdir('.') if f.endswith('.json') and os.path.isfile(f)]
+        if json_files:
+            console.print("\n[bold magenta][*] Discovered payload JSON targets in working directory:[/bold magenta]")
+            for f in sorted(json_files):
+                console.print(f"  • [yellow]{f}[/yellow]")
+            console.print()
+    except Exception as e:
+        console.print(f"[bold red][-][/bold red] Warning: Could not scan directory for JSON files: {e}")
+
+    # 2. Prompt for path to the album JSON
+    input_path = None
     while True:
-        raw = Prompt.ask("[bold cyan]Path to the album JSON file[/bold cyan]")
+        raw = Prompt.ask("[bold cyan][?][/bold cyan] Path to the album JSON file")
         candidate = Path(clean_dragged_path(raw)).expanduser()
         if candidate.exists() and candidate.is_file():
-            return candidate
-        print(f"[-] '{candidate}' doesn't exist or isn't a file. Try again.")
+            input_path = candidate
+            break
+        console.print(f"[bold red][-][/bold red] Error: '{candidate}' doesn't exist or isn't a file. Try again.")
+
+    # 3. Prompt for targeted index selection (subset vs all)
+    selection = Prompt.ask(
+        "[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](e.g. 5 | 3,7,12 | 1-10 or Press Enter for ALL)[/dim]"
+    ).strip()
+    if not selection or selection.lower() == 'all':
+        selection = None
+
+    # 4. Prompt for worker concurrency
+    workers_input = Prompt.ask(
+        "[bold cyan][?][/bold cyan] Enter worker concurrency limit [dim](Press Enter for default)[/dim]"
+    ).strip()
+    
+    workers = 1
+    if workers_input:
+        try:
+            workers = max(1, int(workers_input))
+        except ValueError:
+            console.print("[bold yellow][!][/bold yellow] Invalid worker layout pattern. Defaulting to 1 worker.")
+            workers = 1
+
+    return input_path, selection, workers
 
 
 def truncate_to_fit(text: str, max_len: int) -> str:
@@ -216,7 +254,7 @@ def execute_ytdlp_task(index: int, total_files: int, file_item: dict, slot_id: i
 
     if not cdn_url:
         write_history_line(f"[-] [{index}/{total_files}] Skipping: {safe_name} (No active signed URL found)")
-        update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Loading...", total_workers)
+        update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Idle...", total_workers)
         return False
 
     ytdlp_cmd = [
@@ -229,8 +267,8 @@ def execute_ytdlp_task(index: int, total_files: int, file_item: dict, slot_id: i
         "--socket-timeout", "25",
         "--continue",
         "--newline",
-        "--referer", "https://bunkr.cr/",
-        "--add-header", "Origin:https://bunkr.cr",
+        "--referer", "https://youtube.com/",
+        "--add-header", "Origin:https://youtube.com",
         "--add-header", (
             "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -272,17 +310,17 @@ def execute_ytdlp_task(index: int, total_files: int, file_item: dict, slot_id: i
             raise subprocess.CalledProcessError(process.returncode, ytdlp_cmd)
 
         write_history_line(f"[+] [{index}/{total_files}] Successfully downloaded: {safe_name}")
-        update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Loading...", total_workers)
+        update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Idle...", total_workers)
         return True
 
     except subprocess.CalledProcessError as err:
         write_history_line(f"[-] [{index}/{total_files}] Failed: {safe_name} (Code {err.returncode})")
-        update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Loading...", total_workers)
+        update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Idle...", total_workers)
         return False
     except Exception as e:
         if not shutdown_event.is_set():
             write_history_line(f"[-] [{index}/{total_files}] Error: {e}")
-            update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Loading...", total_workers)
+            update_worker_slot(slot_id, f"[Worker {slot_id + 1}] Idle...", total_workers)
         return False
     finally:
         with active_processes_lock:
@@ -292,9 +330,32 @@ def execute_ytdlp_task(index: int, total_files: int, file_item: dict, slot_id: i
 def download_assets():
     global worker_statuses
     global DEFAULT_OUTPUT_DIR
-    args = parse_arguments()
-    workers = max(1, args.workers)
+    
+    # 1. Check if no command-line arguments are provided[cite: 5]
+    if len(sys.argv) == 1:
+        input_json_path, selection_arg, workers = prompt_for_inputs()
+    else:
+        # Otherwise parse CLI inputs as usual
+        args = parse_arguments()
+        
+        # If output path is explicitly set via flag, assign it
+        if args.output:
+            DEFAULT_OUTPUT_DIR = Path(clean_dragged_path(args.output)).expanduser()
+            
+        # Resolve Input JSON[cite: 5]
+        if args.input:
+            input_json_path = Path(clean_dragged_path(args.input)).expanduser()
+            if not input_json_path.exists():
+                print(f"[-] Error: '{input_json_path}' not found. Verify your --input path configuration.")
+                return
+        else:
+            # Simple fallback path prompt if they passed SOME arguments (like -w or -o) but not -i
+            input_json_path = prompt_for_input_path()
+            
+        selection_arg = args.number
+        workers = max(1, args.workers if args.workers is not None else 1)
 
+    # Apply global ceiling clamp on concurrency
     MAX_WORKERS = 5
     if workers > MAX_WORKERS:
         print(f"[*] Requested {workers} workers, but the hard cap is {MAX_WORKERS}. Clamping down.")
@@ -304,17 +365,7 @@ def download_assets():
         print("[-] Error: 'yt-dlp' was not found in your system PATH.")
         return
 
-    if args.output:
-        DEFAULT_OUTPUT_DIR = Path(clean_dragged_path(args.output)).expanduser()
     DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    if args.input:
-        input_json_path = Path(clean_dragged_path(args.input)).expanduser()
-        if not input_json_path.exists():
-            print(f"[-] Error: '{input_json_path}' not found. Verify your --input path configuration.")
-            return
-    else:
-        input_json_path = prompt_for_input_path()
 
     print(f"[*] Reading download queue from {input_json_path}...")
     with open(input_json_path, "r", encoding="utf-8") as f:
@@ -328,21 +379,18 @@ def download_assets():
     total_files = len(files_list)
 
     # Build the (original_index, item) work queue. Default: everything.
-    # If -n/--number was given, filter down to just those positions while
-    # keeping each item's ORIGINAL 1-based index for display/logging, so
-    # "[3/51]" still means "item 3 of the full 51", not "item 3 of your subset".
     indexed_files = list(enumerate(files_list, start=1))
-    if args.number:
+    if selection_arg:
         try:
-            selection = parse_selection(args.number, total_files)
+            selection = parse_selection(selection_arg, total_files)
         except ValueError as exc:
             print(f"[-] Error: {exc}")
             return
         indexed_files = [(idx, item) for idx, item in indexed_files if idx in selection]
-        print(f"[*] Selection '{args.number}' resolved to {len(indexed_files)} item(s) out of {total_files} total.")
+        print(f"[*] Selection '{selection_arg}' resolved to {len(indexed_files)} item(s) out of {total_files} total.")
 
     if not indexed_files:
-        print("[-] No items match the given --number selection.")
+        print("[-] No items match the given selection.")
         return
 
     queue_size = len(indexed_files)
@@ -356,7 +404,7 @@ def download_assets():
     # to everything above it.
     setup_display_region(workers)
 
-    worker_statuses = [f"[Worker {i + 1}] Loading..." for i in range(workers)]
+    worker_statuses = [f"[Worker {i + 1}] Idle..." for i in range(workers)]
     for i in range(workers):
         row = TERMINAL_ROWS - workers + i + 1
         sys.stdout.write(f"\033[{row};1H\033[2K{worker_statuses[i]}")
@@ -404,8 +452,7 @@ def download_assets():
         shutdown_event.set()
 
         # Cancel not-yet-started futures, and actually kill the yt-dlp
-        # child processes that ARE running (cancel_futures alone leaves
-        # these alive and still writing to stdout).
+        # child processes that ARE running
         executor.shutdown(wait=False, cancel_futures=True)
         with active_processes_lock:
             live_processes = list(active_processes.values())
@@ -423,9 +470,7 @@ def download_assets():
                 except Exception:
                     pass
 
-        # Now that every thread has stopped touching the display (their
-        # subprocess pipes just closed, so their read loops exit), it's
-        # safe to tear down the scroll region.
+        # Tear down the scroll region safely after child processes are dead.
         teardown_display_region()
         print("[!] Ctrl+C detected! Terminating all background tasks cleanly...")
         sys.exit(130)
@@ -437,8 +482,19 @@ def download_assets():
     print("\n[+] All queue tasks processed.")
 
 
+def prompt_for_input_path() -> Path:
+    """Fallback interactive prompt if CLI args were passed but input flag was missing."""
+    while True:
+        raw = Prompt.ask("[bold cyan]Path to the album JSON file[/bold cyan]")
+        candidate = Path(clean_dragged_path(raw)).expanduser()
+        if candidate.exists() and candidate.is_file():
+            return candidate
+        print(f"[-] '{candidate}' doesn't exist or isn't a file. Try again.")
+
+
 if __name__ == "__main__":
     if os.name == 'nt':
-        os.system('')
+        import subprocess
+        subprocess.run("", shell=True)
 
     download_assets()

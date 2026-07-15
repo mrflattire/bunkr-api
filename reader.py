@@ -55,11 +55,25 @@ def parse_and_check_expiry(url_str):
 def show_interactive_options(filepath, all_files, page_files, start_idx, total_pages, current_page):
     """
     Provides a prompt lifecycle allowing hands-free secondary script operations.
-    Returns: 'n' (next), 'p' (prev), 'q' (quit), '3' (remint), or None to loop again.
+    Returns: 'n' (next), 'p' (prev), 'q' (quit), '5' (remint), or None to loop again.
     """
+    # Check if any asset on the current visible page has expired[cite: 5]
+    has_expired_tokens = False
+    for file_rec in page_files:
+        token_status = parse_and_check_expiry(file_rec.get("signed_cdn_url"))
+        if "Expired" in token_status:
+            has_expired_tokens = True
+            break
+
+    # Determine Option 5 style depending on token status[cite: 5]
+    if has_expired_tokens:
+        minter_style = "[bold red blink]minter.py (⚠️ EXPIRED TOKENS DETECTED)[/bold red blink]"
+    else:
+        minter_style = "[green]minter.py[/green]"
+
     console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
     
-    # Show page navigation hints dynamically
+    # Show page navigation hints dynamically[cite: 5]
     nav_hints = []
     if current_page < total_pages:
         nav_hints.append("[bold white]n[/bold white]: Next Page")
@@ -68,12 +82,12 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
     if nav_hints:
         console.print(f" Navigation -> {' | '.join(nav_hints)}")
         
-    console.print(" [bold white]1.[/bold white] Forward all asset keys to [green]downloader.py[/green]")
-    console.print(" [bold white]2.[/bold white] Copy a specific item link directly to console standard output")
-    console.print(" [bold white]3.[/bold white] Remint expired tokens via [green]minter.py[/green]")
-    console.print(" [bold white]4.[/bold white] Stream a specific asset target directly via [green]mpv[/green]")
-    console.print(" [bold white]5.[/bold white] Download target asset(s) via [green]downloader.py[/green] [dim] (Accepts: 5 | 3,7,12 | 1-10)[/dim]")
-    console.print(" [bold white]q.[/bold white] Close reader utility context frame")
+    console.print(" [bold white]1.[/bold white] Stream a specific asset target directly via [green]mpv[/green]")
+    console.print(" [bold white]2.[/bold white] Download target asset(s) via [green]downloader.py[/green] [dim] (Accepts: 5 | 3,7,12 | 1-10)[/dim]")
+    console.print(" [bold white]3.[/bold white] Forward all asset keys to [green]downloader.py[/green]")
+    console.print(" [bold white]4.[/bold white] Copy a specific item link directly to console standard output")
+    console.print(f" [bold white]5.[/bold white] Remint expired tokens via {minter_style}")
+    console.print(" [bold white]q.[/bold white] Exit reader")
     
     choices = ["1", "2", "3", "4", "5", "q"]
     if current_page < total_pages: choices.append("n")
@@ -81,20 +95,16 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
     
     action = Prompt.ask("\n[bold cyan][?][/bold cyan] Choose option", choices=choices, default="q")
     
-    if action in ("n", "p", "q", "3"):
+    if action in ("n", "p", "q"):
         return action
         
+    # 5 is mapped to remint[cite: 5]
+    if action == "5":
+        return "5"
+
+    # Action 1: Stream target via mpv[cite: 5]
     if action == "1":
-        console.print(f"\n[bold yellow][*][/bold yellow] Handing file over to execution context: [dim white]python downloader.py {filepath}[/dim white]")
         try:
-            os.system(f"python downloader.py --input {filepath}")
-        except KeyboardInterrupt:
-            console.print("\n[bold yellow][!][/bold yellow] downloader pipeline interrupted execution context cleanly. Returning to dashboard...")
-            time.sleep(1)
-            
-    elif action in ("2", "4"):
-        try:
-            # Traditional single-item row tracking logic for copy/stream
             end_idx = start_idx + len(page_files) - 1
             selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item row index ({start_idx}-{end_idx})")
             idx = int(selection) - 1
@@ -102,16 +112,12 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
                 chosen_file = all_files[idx]
                 target_url = chosen_file.get("signed_cdn_url") or chosen_file.get("href", "N/A")
                 
-                if action == "2":
-                    console.print(f"\n[bold green][+][/bold green] Extracted Asset Stream Endpoint:\n\n[bold white]{target_url}[/bold white]\n")
-                    Prompt.ask("[dim white]Press Enter to continue...[/dim white]")
-                elif action == "4":
-                    if "Expired" in parse_and_check_expiry(chosen_file.get("signed_cdn_url")):
-                        console.print("[bold red][-][/bold red] Error: Cannot process an expired token asset. Remint tokens first.")
-                        time.sleep(2)
-                    else:
-                        console.print(f"\n[bold yellow][*][/bold yellow] Initializing mpv asset pipeline for: [white]{chosen_file.get('original') or chosen_file.get('title')}[/white]")
-                        os.system(f'mpv "{target_url}"')
+                if "Expired" in parse_and_check_expiry(chosen_file.get("signed_cdn_url")):
+                    console.print("[bold red][-][/bold red] Error: Cannot process an expired token asset. Remint tokens first.")
+                    time.sleep(2)
+                else:
+                    console.print(f"\n[bold yellow][*][/bold yellow] Initializing mpv asset pipeline for: [white]{chosen_file.get('original') or chosen_file.get('title')}[/white]")
+                    os.system(f'mpv "{target_url}"')
             else:
                 console.print("[bold red][-][/bold red] Selected row boundary error limits crossed.")
                 time.sleep(1.5)
@@ -119,22 +125,55 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
             console.print("[bold red][-][/bold red] Invalid selection entry pattern initialized.")
             time.sleep(1.5)
 
-    elif action == "5":
-        # Multi-format target filter selection routing
+    # Action 2: Download targeted asset(s) via downloader.py[cite: 5]
+    elif action == "2":
         selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](e.g. 5 or 3,7,12 or 1-10)[/dim]").strip()
         if not selection:
             console.print("[bold red][-][/bold red] Empty target configuration passed.")
             time.sleep(1)
             return None
 
-        console.print(f"\n[bold yellow][*][/bold yellow] Launching targeted execution filter payload: [white]-n {selection}[/white]")
-        
+        # Added worker concurrency prompt for Option 2
+        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency limit [dim](Press Enter for default)[/dim]").strip()
+        worker_arg = f" -w {workers}" if workers else ""
+
+        console.print(f"\n[bold yellow][*][/bold yellow] Launching targeted execution filter payload: [white]-n {selection}{worker_arg}[/white]")
         try:
-            # Forward the raw string input directly onto downloader.py's robust -n implementation
-            os.system(f"python downloader.py --input {filepath} -n {selection}")
+            os.system(f"python downloader.py --input {filepath} -n {selection}{worker_arg}")
         except KeyboardInterrupt:
             console.print("\n[bold yellow][!][/bold yellow] Targeted selection run aborted via keystroke. Returning to dashboard...")
         time.sleep(1)
+
+    # Action 3: Forward all asset keys to downloader.py[cite: 5]
+    elif action == "3":
+        # Added worker concurrency prompt for Option 3
+        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency limit [dim](Press Enter for default)[/dim]").strip()
+        worker_arg = f" -w {workers}" if workers else ""
+
+        console.print(f"\n[bold yellow][*][/bold yellow] Handing file over to execution context: [dim white]python downloader.py --input {filepath}{worker_arg}[/dim white]")
+        try:
+            os.system(f"python downloader.py --input {filepath}{worker_arg}")
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow][!][/bold yellow] downloader pipeline interrupted execution context cleanly. Returning to dashboard...")
+            time.sleep(1)
+
+    # Action 4: Copy specific link directly to stdout console[cite: 5]
+    elif action == "4":
+        try:
+            end_idx = start_idx + len(page_files) - 1
+            selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item row index ({start_idx}-{end_idx})")
+            idx = int(selection) - 1
+            if start_idx - 1 <= idx <= end_idx:
+                chosen_file = all_files[idx]
+                target_url = chosen_file.get("signed_cdn_url") or chosen_file.get("href", "N/A")
+                console.print(f"\n[bold green][+][/bold green] Extracted Asset Stream Endpoint:\n\n[bold white]{target_url}[/bold white]\n")
+                Prompt.ask("[dim white]Press Enter to continue...[/dim white]")
+            else:
+                console.print("[bold red][-][/bold red] Selected row boundary error limits crossed.")
+                time.sleep(1.5)
+        except ValueError:
+            console.print("[bold red][-][/bold red] Invalid selection entry pattern initialized.")
+            time.sleep(1.5)
 
     return None
 
@@ -175,9 +214,12 @@ def read_and_render_json(filepath):
         end_idx = start_idx + page_size
         page_files = all_files[start_idx:end_idx]
 
+        # Shifted title configuration directly to left-aligned print[cite: 5]
+        console.print(f"\n[bold cyan]Deep Resolved Assets Inventory (Page {current_page}/{total_pages} | Items {start_idx + 1}-{min(end_idx, total_items)} of {total_items})[/bold cyan]")
+        
         table = Table(
-            title=f"\n[bold magenta]Deep Resolved Assets Inventory (Page {current_page}/{total_pages} | Items {start_idx + 1}-{min(end_idx, total_items)} of {total_items})[/bold magenta]", 
-            style="dim white"
+            style="dim white",
+            show_header=True
         )
         table.add_column("#", justify="right", style="magenta")
         table.add_column("Asset Original Name / Storage Name", style="white")
@@ -211,7 +253,8 @@ def read_and_render_json(filepath):
             current_page += 1
         elif nav_action == "p":
             current_page -= 1
-        elif nav_action == "3":
+        # '5' is now the designated action returned to refresh the file after a remint operation[cite: 5]
+        elif nav_action == "5":
             console.print(f"\n[bold yellow][*][/bold yellow] Launching token minter: [dim white]python minter.py --input {filepath}[/dim white]")
             os.system(f"python minter.py --input {filepath}")
             console.print("[bold green][+][/bold green] Minter execution finished. Reloading dataset...")
@@ -231,18 +274,26 @@ def read_and_render_json(filepath):
     return True
 
 if __name__ == "__main__":
-    # Check if file argument was passed directly via CLI execution mapping
     if len(sys.argv) >= 2:
         read_and_render_json(sys.argv[1])
     else:
-        # Fallback to interactive prompt mode if no flags are provided
         while True:
             try:
+                # Look in working directory for .json files and display them before prompting[cite: 5]
+                try:
+                    json_files = [f for f in os.listdir('.') if f.endswith('.json') and os.path.isfile(f)]
+                    if json_files:
+                        console.print("\n[bold magenta][*] Discovered payload JSON targets in working directory:[/bold magenta]")
+                        for f in sorted(json_files):
+                            console.print(f"  • [yellow]{f}[/yellow]")
+                        console.print()
+                except Exception as e:
+                    console.print(f"[bold red][-][/bold red] Warning: Could not scan directory for JSON files: {e}")
+
                 target_input = Prompt.ask("[bold cyan][?][/bold cyan] Enter path to target payload mapping JSON file (or 'q' to exit)").strip()
                 if target_input.lower() in ('q', 'quit', 'exit'):
                     break
                     
-                # Clean enclosing quotes if dragged and dropped directly onto terminal frames
                 target_input = target_input.strip("'\"")
                 
                 if not target_input:
