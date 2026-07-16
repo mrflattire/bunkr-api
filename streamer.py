@@ -36,6 +36,13 @@ def parse_arguments():
             "('10-20'), or a mix ('1,4-6,9'). Omit or pass 'all' to play everything."
         )
     )
+    parser.add_argument(
+        '-p', '--player',
+        type=str,
+        choices=['mpv', 'vlc'],
+        default=None,
+        help="Choose the media player backend ('mpv' or 'vlc')."
+    )
     return parser.parse_args()
 
 
@@ -88,14 +95,12 @@ def connect_to_ipc(ipc_path: str):
     Handles Unix Sockets on Unix, and Named Pipes natively on Windows.
     """
     if os.name == 'nt':
-        # Open Windows named pipe directly as an unbuffered, shared binary file
         try:
             handle = open(ipc_path, 'r+b', buffering=0)
             return handle
         except Exception as e:
             raise ConnectionError(f"Failed to open Windows named pipe {ipc_path}: {e}")
     else:
-        # Standard AF_UNIX connection on macOS/Linux
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.connect(ipc_path)
         return sock.makefile("rw", encoding="utf-8")
@@ -109,7 +114,6 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
     connected = False
     sock_file = None
     
-    # 1. Connect to the socket or named pipe
     for _ in range(50):
         if stop_event.is_set():
             return
@@ -125,7 +129,6 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
     if not connected or not sock_file:
         return
 
-    # Local state storage for our observed properties
     state = {
         "media-title": None,
         "time-pos": None,
@@ -135,7 +138,6 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
         "playlist-pos": None
     }
 
-    # Map subscription IDs to our properties
     observed_properties = {
         1: "media-title",
         2: "time-pos",
@@ -145,7 +147,6 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
         6: "playlist-pos"
     }
 
-    # 2. Subscribe to property changes (Observer Pattern)
     try:
         for obs_id, prop_name in observed_properties.items():
             payload = json.dumps({"command": ["observe_property", obs_id, prop_name]}) + "\n"
@@ -162,7 +163,6 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
             pass
         return
 
-    # Setup Rich live layout
     progress_bar = Progress(
         TextColumn("[bold cyan]{task.description}"),
         BarColumn(bar_width=40),
@@ -185,7 +185,6 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
         m, s = divmod(int(seconds), 60)
         return f"{m:02d}:{s:02d}"
 
-    # UI updates will run reflecting the event-driven state dict
     def update_ui():
         name = state["media-title"]
         pos = state["time-pos"]
@@ -202,12 +201,10 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
 
         if name:
             display_title = f"{track_prefix}{name}"
-            # Truncate clean window title to prevent layout wrapping issues
             display_title = (display_title[:38] + '...') if len(display_title) > 41 else display_title
         else:
             display_title = "Buffering stream..."
 
-        # Update Live Widget safely
         progress_bar.update(
             track_task,
             description=f"Playing: {display_title}",
@@ -217,14 +214,13 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
             cache_duration=f"{cache:.1f}" if cache is not None else "0.0"
         )
 
-    # 3. Read incoming event updates continuously
     with Live(Panel(progress_bar, title="[bold green]Live Stream Player Status[/bold green]", border_style="green"), refresh_per_second=10):
         while not stop_event.is_set():
             try:
                 if os.name == 'nt':
                     raw_line = sock_file.readline()
                     if not raw_line:
-                        break  # Pipe closed by MPV exiting
+                        break
                     line = raw_line.decode('utf-8', errors='ignore').strip()
                 else:
                     line = sock_file.readline().strip()
@@ -233,7 +229,6 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
 
                 data = json.loads(line)
                 
-                # Check if this is a property-change notification we subscribed to
                 if data.get("event") == "property-change":
                     obs_id = data.get("id")
                     prop_name = observed_properties.get(obs_id)
@@ -252,7 +247,7 @@ def poll_mpv_status(ipc_path: str, stop_event: threading.Event, total_tracks: in
         pass
 
 
-def play_playlist_mode(playback_queue: list):
+def play_playlist_mpv(playback_queue: list):
     """Assembles an M3U playlist and opens it in MPV using JSON IPC."""
     console.print(f"\n[bold green][*][/bold green] Assembling Playlist ([cyan]{len(playback_queue)} tracks[/cyan])...")
     try:
@@ -268,7 +263,6 @@ def play_playlist_mode(playback_queue: list):
         console.print(f"[bold red][-][/bold red] Failed to generate temporary play-queue file: {e}")
         return
 
-    # Setup dynamic platform-specific IPC identifier
     if os.name == 'nt':
         ipc_path = rf"\\.\pipe\mpv_ipc_{os.getpid()}"
     else:
@@ -282,7 +276,6 @@ def play_playlist_mode(playback_queue: list):
         str(playlist_path)
     ]
 
-    # Event flag sync for process control loop
     stop_event = threading.Event()
     poll_thread = threading.Thread(
         target=poll_mpv_status,
@@ -293,15 +286,9 @@ def play_playlist_mode(playback_queue: list):
     console.print(f"[bold green][*][/bold green] Launching MPV engine with IPC control...")
     
     try:
-        # Launch player cleanly with silent outputs to keep terminal space free of noise
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Start state poller thread
         poll_thread.start()
-        
-        # Block until the window exits or is manually closed
         proc.wait()
-        
     except FileNotFoundError:
         console.print(f"[bold red][-][/bold red] Error: 'mpv' executable not found on system PATH.")
     except KeyboardInterrupt:
@@ -309,7 +296,6 @@ def play_playlist_mode(playback_queue: list):
         if 'proc' in locals():
             proc.terminate()
     finally:
-        # Signal loop and clean resources
         stop_event.set()
         poll_thread.join(timeout=1.0)
         
@@ -328,10 +314,58 @@ def play_playlist_mode(playback_queue: list):
         console.print("[bold green][+][/bold green] Player session closed safely.")
 
 
+def play_playlist_vlc(playback_queue: list):
+    """Assembles an M3U playlist and opens it in VLC as fire-and-forget."""
+    console.print(f"\n[bold green][*][/bold green] Assembling Playlist ([cyan]{len(playback_queue)} tracks[/cyan])...")
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".m3u", mode="w", encoding="utf-8") as tmp_playlist:
+            tmp_playlist.write("#EXTM3U\n")
+            for idx, item in playback_queue:
+                title = item.get("original", item.get("title", f"Track_{idx}"))
+                url = item.get("signed_cdn_url")
+                tmp_playlist.write(f"#EXTINF:-1,{idx}. {title}\n")
+                tmp_playlist.write(f"{url}\n")
+            playlist_path = Path(tmp_playlist.name)
+    except Exception as e:
+        console.print(f"[bold red][-][/bold red] Failed to generate temporary play-queue file: {e}")
+        return
+
+    # Look for standard VLC path on Windows if it's not on system path
+    vlc_cmd = "vlc"
+    if os.name == 'nt' and not shutil.which("vlc"):
+        possible_paths = [
+            r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+            r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe"
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                vlc_cmd = path
+                break
+
+    cmd = [vlc_cmd, str(playlist_path)]
+
+    console.print("[bold green][*][/bold green] Streaming via VLC... close the window to return.")
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc.wait()
+    except FileNotFoundError:
+        console.print(f"[bold red][-][/bold red] Error: 'vlc' executable not found on system PATH or default directories.")
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow][!][/bold yellow] Playback interrupted by user.")
+        if 'proc' in locals():
+            proc.terminate()
+    finally:
+        if playlist_path.exists():
+            try:
+                os.unlink(playlist_path)
+            except OSError:
+                pass
+        console.print("[bold green][+][/bold green] Player session closed safely.")
+
+
 def main():
     # Scenario A: Script run raw without any CLI arguments at all
     if len(sys.argv) == 1:
-        # Scan local workspace for quick targets
         try:
             json_files = [f for f in os.listdir('.') if f.endswith('.json') and os.path.isfile(f)]
             if json_files:
@@ -349,19 +383,24 @@ def main():
         if not selection_arg:
             selection_arg = 'all'
             
+        player_choice = Prompt.ask("[bold cyan][?][/bold cyan] Select Media Player Engine", choices=["mpv", "vlc"], default="mpv")
+            
     # Scenario B: Script run with CLI arguments (e.g. -i album.json)
     else:
         args = parse_arguments()
         input_json_path = Path(clean_dragged_path(args.input)).expanduser()
         
-        # If the user passed -n / --number, bypass the prompt and use it directly
         if args.number is not None:
             selection_arg = args.number
-        # If they omitted -n, ask them interactively, defaulting to 'all' on Enter[cite: 3]
         else:
             selection_arg = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index or range [dim](or Press Enter for ALL)[/dim]").strip()
             if not selection_arg:
                 selection_arg = 'all'
+
+        if args.player is not None:
+            player_choice = args.player
+        else:
+            player_choice = Prompt.ask("[bold cyan][?][/bold cyan] Select Media Player Engine", choices=["mpv", "vlc"], default="mpv")
 
     # Load resources
     try:
@@ -397,12 +436,14 @@ def main():
         console.print("[bold red][-][/bold red] No playable tracks available. Run minter.py.")
         sys.exit(1)
 
-    # Launch Playback Mode!
-    play_playlist_mode(playback_queue)
+    # Launch chosen player backend!
+    if player_choice == "vlc":
+        play_playlist_vlc(playback_queue)
+    else:
+        play_playlist_mpv(playback_queue)
 
 
 if __name__ == "__main__":
-    # If on Windows, run an empty command with shell=True to initialize Virtual Terminal / ANSI color support
     if os.name == 'nt':
         subprocess.run("", shell=True)
     main()

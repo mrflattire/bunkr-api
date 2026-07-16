@@ -103,16 +103,19 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
     if action == "5":
         return "5"
 
-    # Action 1: Stream targets via the streamer.py pipeline[cite: 2]
+    # Action 1: Stream targets via the streamer.py pipeline
     if action == "1":
         selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](or Press Enter for ALL)[/dim]").strip()
         if not selection:
-            selection = "all"  # Default to "all" if the user presses Enter[cite: 2]
+            selection = "all"
 
-        console.print(f"\n[bold yellow][*][/bold yellow] Forwarding selection to streamer pipeline: [white]-n {selection}[/white]")
+        # Ask for the media player backend to forward to streamer.py
+        player = Prompt.ask("[bold cyan][?][/bold cyan] Select Media Player Engine", choices=["mpv", "vlc"], default="mpv")
+
+        console.print(f"\n[bold yellow][*][/bold yellow] Forwarding selection to streamer pipeline: [white]-n {selection} --player {player}[/white]")
         try:
-            # Use sys.executable to run inside the same environment
-            subprocess.run([sys.executable, "streamer.py", "--input", filepath, "-n", selection])
+            # Use sys.executable to run inside the same environment, dynamically passing the selected player flag
+            subprocess.run([sys.executable, "streamer.py", "--input", filepath, "-n", selection, "--player", player])
         except KeyboardInterrupt:
             console.print("\n[bold yellow][!][/bold yellow] Streaming sequence aborted cleanly. Returning to dashboard...")
         time.sleep(1)
