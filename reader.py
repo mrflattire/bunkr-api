@@ -2,6 +2,7 @@ import sys
 import json
 import os
 import time
+import subprocess
 from datetime import datetime
 import urllib.parse
 from rich.console import Console
@@ -57,7 +58,7 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
     Provides a prompt lifecycle allowing hands-free secondary script operations.
     Returns: 'n' (next), 'p' (prev), 'q' (quit), '5' (remint), or None to loop again.
     """
-    # Check if any asset on the current visible page has expired[cite: 5]
+    # Check if any asset on the current visible page has expired
     has_expired_tokens = False
     for file_rec in page_files:
         token_status = parse_and_check_expiry(file_rec.get("signed_cdn_url"))
@@ -65,7 +66,7 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
             has_expired_tokens = True
             break
 
-    # Determine Option 5 style depending on token status[cite: 5]
+    # Determine Option 5 style depending on token status
     if has_expired_tokens:
         minter_style = "[bold red blink]minter.py (⚠️ EXPIRED TOKENS DETECTED)[/bold red blink]"
     else:
@@ -73,7 +74,7 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
 
     console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
     
-    # Show page navigation hints dynamically[cite: 5]
+    # Show page navigation hints dynamically
     nav_hints = []
     if current_page < total_pages:
         nav_hints.append("[bold white]n[/bold white]: Next Page")
@@ -82,7 +83,7 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
     if nav_hints:
         console.print(f" Navigation -> {' | '.join(nav_hints)}")
         
-    console.print(" [bold white]1.[/bold white] Stream a specific asset target directly via [green]mpv[/green]")
+    console.print(" [bold white]1.[/bold white] Stream target asset(s) via [green]streamer.py[/green] [dim] (Accepts: 5 | 1,3,5 | 1-5 | Enter for ALL)[/dim]")
     console.print(" [bold white]2.[/bold white] Download target asset(s) via [green]downloader.py[/green] [dim] (Accepts: 5 | 3,7,12 | 1-10)[/dim]")
     console.print(" [bold white]3.[/bold white] Forward all asset keys to [green]downloader.py[/green]")
     console.print(" [bold white]4.[/bold white] Copy a specific item link directly to console standard output")
@@ -98,34 +99,25 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
     if action in ("n", "p", "q"):
         return action
         
-    # 5 is mapped to remint[cite: 5]
+    # 5 is mapped to remint
     if action == "5":
         return "5"
 
-    # Action 1: Stream target via mpv[cite: 5]
+    # Action 1: Stream targets via the streamer.py pipeline[cite: 2]
     if action == "1":
-        try:
-            end_idx = start_idx + len(page_files) - 1
-            selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item row index ({start_idx}-{end_idx})")
-            idx = int(selection) - 1
-            if start_idx - 1 <= idx <= end_idx:
-                chosen_file = all_files[idx]
-                target_url = chosen_file.get("signed_cdn_url") or chosen_file.get("href", "N/A")
-                
-                if "Expired" in parse_and_check_expiry(chosen_file.get("signed_cdn_url")):
-                    console.print("[bold red][-][/bold red] Error: Cannot process an expired token asset. Remint tokens first.")
-                    time.sleep(2)
-                else:
-                    console.print(f"\n[bold yellow][*][/bold yellow] Initializing mpv asset pipeline for: [white]{chosen_file.get('original') or chosen_file.get('title')}[/white]")
-                    os.system(f'mpv "{target_url}"')
-            else:
-                console.print("[bold red][-][/bold red] Selected row boundary error limits crossed.")
-                time.sleep(1.5)
-        except ValueError:
-            console.print("[bold red][-][/bold red] Invalid selection entry pattern initialized.")
-            time.sleep(1.5)
+        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](or Press Enter for ALL)[/dim]").strip()
+        if not selection:
+            selection = "all"  # Default to "all" if the user presses Enter[cite: 2]
 
-    # Action 2: Download targeted asset(s) via downloader.py[cite: 5]
+        console.print(f"\n[bold yellow][*][/bold yellow] Forwarding selection to streamer pipeline: [white]-n {selection}[/white]")
+        try:
+            # Use sys.executable to run inside the same environment
+            subprocess.run([sys.executable, "streamer.py", "--input", filepath, "-n", selection])
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow][!][/bold yellow] Streaming sequence aborted cleanly. Returning to dashboard...")
+        time.sleep(1)
+
+    # Action 2: Download targeted asset(s) via downloader.py
     elif action == "2":
         selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](e.g. 5 or 3,7,12 or 1-10)[/dim]").strip()
         if not selection:
@@ -133,31 +125,37 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
             time.sleep(1)
             return None
 
-        # Added worker concurrency prompt for Option 2
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency limit [dim](Press Enter for default)[/dim]").strip()
-        worker_arg = f" -w {workers}" if workers else ""
+        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
+        
+        # Build command list dynamically
+        cmd = [sys.executable, "rich_downloader.py", "--input", filepath, "-n", selection]
+        if workers:
+            cmd.extend(["-w", workers])
 
-        console.print(f"\n[bold yellow][*][/bold yellow] Launching targeted execution filter payload: [white]-n {selection}{worker_arg}[/white]")
+        console.print(f"\n[bold yellow][*][/bold yellow] Launching targeted execution filter payload: [white]-n {selection}{f' -w {workers}' if workers else ''}[/white]")
         try:
-            os.system(f"python downloader.py --input {filepath} -n {selection}{worker_arg}")
+            subprocess.run(cmd)
         except KeyboardInterrupt:
             console.print("\n[bold yellow][!][/bold yellow] Targeted selection run aborted via keystroke. Returning to dashboard...")
         time.sleep(1)
 
-    # Action 3: Forward all asset keys to downloader.py[cite: 5]
+    # Action 3: Forward all asset keys to downloader.py
     elif action == "3":
-        # Added worker concurrency prompt for Option 3
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency limit [dim](Press Enter for default)[/dim]").strip()
-        worker_arg = f" -w {workers}" if workers else ""
+        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
+        
+        # Build command list dynamically
+        cmd = [sys.executable, "rich_downloader.py", "--input", filepath]
+        if workers:
+            cmd.extend(["-w", workers])
 
-        console.print(f"\n[bold yellow][*][/bold yellow] Handing file over to execution context: [dim white]python downloader.py --input {filepath}{worker_arg}[/dim white]")
+        console.print(f"\n[bold yellow][*][/bold yellow] Handing file over to execution context: [dim white]python rich_downloader.py --input {filepath}{f' -w {workers}' if workers else ''}[/dim white]")
         try:
-            os.system(f"python downloader.py --input {filepath}{worker_arg}")
+            subprocess.run(cmd)
         except KeyboardInterrupt:
             console.print("\n[bold yellow][!][/bold yellow] downloader pipeline interrupted execution context cleanly. Returning to dashboard...")
             time.sleep(1)
 
-    # Action 4: Copy specific link directly to stdout console[cite: 5]
+    # Action 4: Copy specific link directly to stdout console
     elif action == "4":
         try:
             end_idx = start_idx + len(page_files) - 1
@@ -214,7 +212,6 @@ def read_and_render_json(filepath):
         end_idx = start_idx + page_size
         page_files = all_files[start_idx:end_idx]
 
-        # Shifted title configuration directly to left-aligned print[cite: 5]
         console.print(f"\n[bold cyan]Deep Resolved Assets Inventory (Page {current_page}/{total_pages} | Items {start_idx + 1}-{min(end_idx, total_items)} of {total_items})[/bold cyan]")
         
         table = Table(
@@ -253,10 +250,14 @@ def read_and_render_json(filepath):
             current_page += 1
         elif nav_action == "p":
             current_page -= 1
-        # '5' is now the designated action returned to refresh the file after a remint operation[cite: 5]
+        # '5' is now the designated action returned to refresh the file after a remint operation
         elif nav_action == "5":
             console.print(f"\n[bold yellow][*][/bold yellow] Launching token minter: [dim white]python minter.py --input {filepath}[/dim white]")
-            os.system(f"python minter.py --input {filepath}")
+            try:
+                subprocess.run([sys.executable, "minter.py", "--input", filepath])
+            except KeyboardInterrupt:
+                console.print("\n[bold red][-][/bold red] Minter execution interrupted.")
+                
             console.print("[bold green][+][/bold green] Minter execution finished. Reloading dataset...")
             
             try:
@@ -274,12 +275,16 @@ def read_and_render_json(filepath):
     return True
 
 if __name__ == "__main__":
+    # If on Windows, run an empty command with shell=True to initialize Virtual Terminal / ANSI color support in cmd/powershell
+    if os.name == 'nt':
+        subprocess.run("", shell=True)
+
     if len(sys.argv) >= 2:
         read_and_render_json(sys.argv[1])
     else:
         while True:
             try:
-                # Look in working directory for .json files and display them before prompting[cite: 5]
+                # Look in working directory for .json files and display them before prompting
                 try:
                     json_files = [f for f in os.listdir('.') if f.endswith('.json') and os.path.isfile(f)]
                     if json_files:
