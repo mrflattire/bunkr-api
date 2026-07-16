@@ -13,7 +13,7 @@ from rich.console import Console
 console = Console()
 
 # Paths config
-DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "youtube_downloads"
+DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "bunkr_downloads"
 
 # Thread-safe terminal layout lock
 stdout_lock = threading.Lock()
@@ -151,7 +151,7 @@ def prompt_for_inputs():
 
     # 4. Prompt for worker concurrency
     workers_input = Prompt.ask(
-        "[bold cyan][?][/bold cyan] Enter worker concurrency limit [dim](Press Enter for default)[/dim]"
+        "[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]"
     ).strip()
     
     workers = 1
@@ -267,8 +267,8 @@ def execute_ytdlp_task(index: int, total_files: int, file_item: dict, slot_id: i
         "--socket-timeout", "25",
         "--continue",
         "--newline",
-        "--referer", "https://youtube.com/",
-        "--add-header", "Origin:https://youtube.com",
+        "--referer", "https://bunkr.cr/",
+        "--add-header", "Origin:https://bunkr.cr",
         "--add-header", (
             "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
