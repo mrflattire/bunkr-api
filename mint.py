@@ -1,0 +1,212 @@
+# mint.py
+import os
+import sys
+import time
+import json
+import re
+import asyncio
+import argparse
+import urllib.parse
+from datetime import datetime
+from pathlib import Path
+
+import urllib3
+from curl_cffi.requests import AsyncSession
+from curl_cffi.curl import CurlError
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+
+# Disable warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+console = Console()
+
+# --- Async Core Minting Functions ---
+
+async def execute_request_with_retry_async(session, url, method="GET", json_payload=None, headers=None, retries=3, delay=1, timeout=30):
+    """Wrapper to handle asynchronous request executions with unified retry loops"""
+    for attempt in range(1, retries + 1):
+        try:
+            if method.upper() == "POST":
+                res = await session.post(url, json=json_payload, headers=headers, verify=False, timeout=timeout)
+            else:
+                res = await session.get(url, headers=headers, timeout=timeout)
+            res.raise_for_status()
+            return res
+        except CurlError as e:
+            if attempt == retries:
+                raise e
+            await asyncio.sleep(delay)
+
+
+async def mint_single_url_async(session, file_id: str) -> str:
+    """
+    Asynchronously resolves a true_file_id and fetches a fresh signed CDN URL.
+    """
+    if not file_id:
+        raise ValueError("Invalid or empty file ID provided.")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Origin": "https://dl.bunkr.cr",
+        "Referer": f"https://dl.bunkr.cr/file/{file_id}",
+    }
+    
+    # Step 1: Query Metadata API
+    meta_url = "https://dl.bunkr.cr/api/_001_v2"
+    payload = {"id": str(file_id)}
+    meta_res = await execute_request_with_retry_async(session, meta_url, method="POST", json_payload=payload, headers=headers)
+    meta_data = meta_res.json()
+    
+    cdn_host = meta_data["mediafiles"]
+    storage_path = meta_data["path"]
+    original_name = meta_data["original"]
+
+    # Step 2: Request Dynamic Validation Token
+    encoded_path = urllib.parse.quote(storage_path)
+    sign_url = f"https://glb-apisign.cdn.cr/sign?path={encoded_path}"
+    sign_res = await execute_request_with_retry_async(session, sign_url, method="GET", headers=headers)
+    sign_data = sign_res.json()
+    
+    token = sign_data["token"]
+    ex = sign_data["ex"]
+
+    # Step 3: URL Stitching
+    encoded_name = urllib.parse.quote(original_name)
+    return f"{cdn_host}{storage_path}?n={encoded_name}&token={token}&ex={ex}"
+
+
+# --- Synchronous Interface for core.py ---
+
+def mint_now(file_id: str) -> str:
+    """
+    Synchronous wrapper to run the async minter.
+    Used as an fallback escape hatch by core.py.
+    """
+    async def _run_single():
+        async with AsyncSession(impersonate="chrome") as session:
+            return await mint_single_url_async(session, file_id)
+
+    if sys.platform == 'win32':
+        return asyncio.run(_run_single(), loop_factory=asyncio.SelectorEventLoop)
+    else:
+        return asyncio.run(_run_single())
+
+
+# --- Asynchronous Batch Pipeline ---
+
+async def process_asset_task(session, db, sem, asset, progress, task_id):
+    """
+    Worker task that processes a single asset token signature refresh.
+    """
+    async with sem:
+        raw_id = asset.get("true_file_id") or asset.get("file_id") or asset.get("api_id")
+        file_id = str(raw_id).strip() if raw_id is not None else None
+        
+        # Simple Fallback Parsing
+        if not file_id and asset.get("source_url"):
+            source_url = asset["source_url"]
+            match = re.search(r'/f/([^./?]+)', source_url)
+            if match:
+                file_id = match.group(1)
+            else:
+                parsed_path = urllib.parse.urlparse(source_url).path
+                raw_basename = os.path.basename(parsed_path.rstrip("/"))
+                file_id, _ = os.path.splitext(raw_basename)
+
+        if not file_id:
+            progress.advance(task_id)
+            return
+
+        try:
+            fresh_url = await mint_single_url_async(session, file_id)
+            db.update_asset_url(asset["id"], fresh_url)
+        except Exception:
+            # Silently keep moving; progress updates status bar
+            pass
+        finally:
+            progress.advance(task_id)
+
+
+async def refresh_all_tokens_async(db, assets, max_workers: int):
+    """
+    Batch-processes assets concurrently using a semaphore.
+    """
+    sem = asyncio.Semaphore(max_workers)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=40, finished_style="green"),
+        TaskProgressColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task(
+            f"[cyan]Refreshing {len(assets)} tokens...", 
+            total=len(assets)
+        )
+        
+        async with AsyncSession(impersonate="chrome") as session:
+            tasks = [
+                process_asset_task(session, db, sem, asset, progress, task_id)
+                for asset in assets
+            ]
+            await asyncio.gather(*tasks)
+
+
+# --- Background / Targeted Loop Implementation ---
+
+def daemon_loop(album_id: int = None):
+    """
+    Loop that polls the database and renews expiring tokens.
+    If album_id is specified, it restricts updates strictly to that album's scope.
+    """
+    from core import DatabaseManager
+    
+    db = DatabaseManager()
+    max_workers = int(db.get_config_val("max_workers", "4"))
+    
+    if album_id:
+        console.print(f"[bold green][+][/bold green] Token Minter active for targeted Album ID: [bold cyan]{album_id}[/bold cyan]")
+    else:
+        console.print("[bold green][+][/bold green] Token Minter Background Daemon initialized.")
+        
+    console.print("[bold dim]Monitoring database. Press Ctrl+C to stop.[/bold dim]")
+    
+    while True:
+        try:
+            poll_interval = int(db.get_config_val("minter_poll_interval_seconds", "60"))
+            raw_assets = db.get_needs_refresh()
+            expiring_assets = [dict(row) for row in raw_assets]
+            
+            if album_id:
+                expiring_assets = [asset for asset in expiring_assets if asset.get("album_id") == album_id]
+            
+            if expiring_assets:
+                # Dispatch async loop for concurrent batch minting
+                if sys.platform == 'win32':
+                    asyncio.run(
+                        refresh_all_tokens_async(db, expiring_assets, max_workers),
+                        loop_factory=asyncio.SelectorEventLoop
+                    )
+                else:
+                    asyncio.run(refresh_all_tokens_async(db, expiring_assets, max_workers))
+            
+            if album_id:
+                break
+                
+            time.sleep(poll_interval)
+            
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow][!][/bold yellow] Minter shut down cleanly.")
+            break
+        except Exception as e:
+            console.print(f"[bold red][x] Loop exception encountered:[/bold red] {e}")
+            time.sleep(10)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="CDN Token Signature Minter Utility.")
+    parser.add_argument('--album-id', type=int, default=None, help="Target a specific album database ID.")
+    args = parser.parse_args()
+
+    daemon_loop(album_id=args.album_id)

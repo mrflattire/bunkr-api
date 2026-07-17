@@ -27,3 +27,11 @@ tests/
 
 # Ignore the downloads directory and everything inside it
 downloads/
+
+# SQLite WAL-mode sidecar files — regenerated automatically, never commit
+*.db-wal
+*.db-shm
+ 
+# The database itself is local runtime state, not source — excluded since
+# signed_cdn_url entries carry live auth tokens that shouldn't sit in git history
+*.db
