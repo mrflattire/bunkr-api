@@ -75,6 +75,16 @@ def parse_arguments():
             "Accepts index ('5'), comma list ('3,7,12'), range ('10-20'), or mix ('1,4-6')."
         )
     )
+    parser.add_argument(
+        '--staged',
+        action='store_true',
+        help="Automatically process all assets or albums marked as staged in the database."
+    )
+    parser.add_argument(
+        '--triage',
+        action='store_true',
+        help="Automatically process all assets currently marked as FAILED in the database."
+    )
     return parser.parse_args()
 
 
@@ -108,22 +118,23 @@ def prompt_for_inputs():
     Scans the tracking database to display cataloged albums, lists local JSON files
     as legacy fallbacks, and prompts for DB ID, selection number, or physical path.
     """
-    # 1. Gather Database Albums (Matching read.py exact schemas and queries)
     db_albums = []
     try:
         db_albums = db.get_all_albums() or []
     except Exception as e:
         console.print(f"[bold red][-][/bold red] Warning: Could not query DB catalog: {e}")
 
-    # Display the unified prompt interface
     console.print()
     if db_albums:
         console.print("[bold magenta][*] Discovered Albums Cataloged in DB:[/bold magenta]")
         for idx, album in enumerate(db_albums, start=1):
-            console.print(f"  [cyan]{idx:2d}[/cyan] • [yellow]{album['title']}[/yellow] ({album['file_count']} items) [dim](DB ID: {album['id']})[/dim]")
+            # Safe type conversion to plain dict to avoid sqlite3.Row AttributeErrors
+            album_dict = dict(album)
+            is_staged_flag = " [bold green][STAGED][/bold green]" if album_dict.get('is_staged') == 1 else ""
+            console.print(f"  [cyan]{idx:2d}[/cyan] • [yellow]{album_dict['title']}[/yellow] ({album_dict['file_count']} items){is_staged_flag} [dim](DB ID: {album_dict['id']})[/dim]")
         console.print()
 
-    # 2. Handle Input Choices with Safe Cancel Exit Triggers
+    console.print("[dim]Special keywords: 'staged' (pulls all staged items) | 'triage' (retries failed items)[/dim]")
     try:
         raw = Prompt.ask("[bold cyan][?][/bold cyan] Choose a record number, drop a fresh JSON path, or 'q' to exit").strip()
     except KeyboardInterrupt:
@@ -134,12 +145,16 @@ def prompt_for_inputs():
         console.print("[bold yellow][!][/bold yellow] Execution exited by user.")
         sys.exit(0)
 
+    if raw.lower() == 'staged':
+        return None, None, None, prompt_for_workers(), True, False
+    if raw.lower() == 'triage':
+        return None, None, None, prompt_for_workers(), False, True
+
     raw = clean_dragged_path(raw)
 
     input_path = None
     db_id = None
 
-    # Resolve database lists index numbers or IDs
     if raw.isdigit():
         num_val = int(raw)
         if db_albums and 1 <= num_val <= len(db_albums):
@@ -164,6 +179,17 @@ def prompt_for_inputs():
         if not selection or selection.lower() == 'all':
             selection = None
 
+        workers = prompt_for_workers()
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow][!][/bold yellow] Session cancelled.")
+        sys.exit(0)
+
+    return input_path, db_id, selection, workers, False, False
+
+
+def prompt_for_workers() -> int:
+    """Helper snippet to abstract worker concurrency gathering."""
+    try:
         workers_input = Prompt.ask(
             "[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]"
         ).strip()
@@ -173,15 +199,13 @@ def prompt_for_inputs():
         console.print("\n[bold yellow][!][/bold yellow] Session cancelled.")
         sys.exit(0)
 
-    workers = 1
     if workers_input:
         try:
-            workers = max(1, int(workers_input))
+            return max(1, int(workers_input))
         except ValueError:
             console.print("[bold yellow][!][/bold yellow] Invalid configuration. Defaulting to 1 worker.")
-            workers = 1
-
-    return input_path, db_id, selection, workers
+            return 1
+    return 1
 
 
 def sanitize_filename(name: str) -> str:
@@ -292,6 +316,8 @@ def execute_ytdlp_task(index: int, total_files: int, asset_data: dict, slot_id: 
         
         if db_id:
             db.update_download_status(db_id, "COMPLETED", local_path=str(dest))
+            with db._get_connection() as conn:
+                conn.execute("UPDATE assets SET is_staged = 0 WHERE id = ?;", (db_id,))
             
         set_idle()
         return True
@@ -379,9 +405,13 @@ def download_assets():
     global DEFAULT_OUTPUT_DIR
     input_json_path = None
     db_id = None
+    selection_arg = None
+    workers = 1
+    run_staged = False
+    run_triage = False
 
     if len(sys.argv) == 1:
-        input_json_path, db_id, selection_arg, workers = prompt_for_inputs()
+        input_json_path, db_id, selection_arg, workers, run_staged, run_triage = prompt_for_inputs()
     else:
         args = parse_arguments()
 
@@ -389,8 +419,12 @@ def download_assets():
             DEFAULT_OUTPUT_DIR = Path(clean_dragged_path(args.output)).expanduser()
 
         db_id = args.db_id
+        run_staged = args.staged
+        run_triage = args.triage
+        selection_arg = args.number
+        workers = max(1, args.workers if args.workers is not None else 1)
 
-        if not db_id:
+        if not db_id and not run_staged and not run_triage:
             if args.input:
                 input_json_path = Path(clean_dragged_path(args.input)).expanduser()
                 if not input_json_path.exists():
@@ -406,9 +440,6 @@ def download_assets():
                     console.print("\n[bold yellow][!][/bold yellow] Canceled.")
                     sys.exit(0)
 
-        selection_arg = args.number
-        workers = max(1, args.workers if args.workers is not None else 1)
-
     MAX_WORKERS = 5
     if workers > MAX_WORKERS:
         console.print(f"[*] Requested {workers} workers, but the hard cap is {MAX_WORKERS}. Clamping down.")
@@ -421,7 +452,48 @@ def download_assets():
     DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     files_list = []
 
-    if db_id:
+    if run_staged:
+        console.print("[bold cyan][*] Extracting all active staged files across database queues...[/bold cyan]")
+        try:
+            with db._get_connection() as conn:
+                conn.execute("PRAGMA busy_timeout = 5000;")
+                assets = conn.execute("""
+                    SELECT a.* FROM assets a
+                    LEFT JOIN albums al ON a.album_id = al.id
+                    WHERE a.is_staged = 1 OR al.is_staged = 1
+                    ORDER BY a.album_id, a.track_number ASC;
+                """).fetchall()
+                for asset in assets:
+                    files_list.append({
+                        "db_asset_id": asset["id"],
+                        "title": asset["title"],
+                        "original": asset["original_filename"],
+                        "signed_cdn_url": asset["signed_cdn_url"],
+                        "size": asset["raw_size_bytes"]
+                    })
+        except Exception as e:
+            console.print(f"[bold red][-][/bold red] Database query failed: {e}")
+            return
+
+    elif run_triage:
+        console.print("[bold red][*] Auto-Triage: Aggregating all broken or FAILED download tracks...[/bold red]")
+        try:
+            with db._get_connection() as conn:
+                conn.execute("PRAGMA busy_timeout = 5000;")
+                assets = conn.execute("SELECT * FROM assets WHERE download_status = 'FAILED' ORDER BY album_id, track_number ASC;").fetchall()
+                for asset in assets:
+                    files_list.append({
+                        "db_asset_id": asset["id"],
+                        "title": asset["title"],
+                        "original": asset["original_filename"],
+                        "signed_cdn_url": asset["signed_cdn_url"],
+                        "size": asset["raw_size_bytes"]
+                    })
+        except Exception as e:
+            console.print(f"[bold red][-][/bold red] Database query failed: {e}")
+            return
+
+    elif db_id:
         console.print(f"[*] Querying tracking database records for Album ID: {db_id}...")
         try:
             with db._get_connection() as conn:
@@ -450,13 +522,13 @@ def download_assets():
         files_list = data.get("files_found", [])
 
     if not files_list:
-        console.print("[red][-][/red] No targets available to download.")
+        console.print("[yellow][!] No targets available to download.[/yellow]")
         return
 
     total_files = len(files_list)
     indexed_files = list(enumerate(files_list, start=1))
 
-    if selection_arg:
+    if selection_arg and not (run_staged or run_triage):
         try:
             selection = parse_selection(selection_arg, total_files)
         except ValueError as exc:
@@ -468,7 +540,7 @@ def download_assets():
         console.print("[red][-][/red] No items match the selection.")
         return
 
-    if db_id:
+    if db_id or run_staged or run_triage:
         import asyncio
         if sys.platform == 'win32':
             asyncio.run(resolve_download_tokens_async(indexed_files), loop_factory=asyncio.SelectorEventLoop)

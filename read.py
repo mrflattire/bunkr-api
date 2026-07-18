@@ -34,11 +34,44 @@ def parse_and_check_expiry(expiry_timestamp):
         return f"[bold green]Valid ({hours}h {mins}m left) ✅[/bold green]"
     return f"[bold yellow]Valid ({mins}m left) ⚠️[/bold yellow]"
 
-def show_interactive_options(album_id, page_assets, start_idx, total_pages, current_page):
-    """
-    Provides a prompt lifecycle allowing hands-free secondary script operations.
-    Runs seamlessly off of database entity ids.
-    """
+def parse_selection(spec: str, total_files: int) -> set:
+    """Parses a choice spec like '1,4-6,9' into a set of 1-based indices."""
+    spec_clean = spec.strip().lower()
+    if not spec or spec_clean == 'all':
+        return set(range(1, total_files + 1))
+        
+    if spec_clean == 'staged':
+        return set()
+
+    selected = set()
+    for chunk in spec.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if "-" in chunk:
+            try:
+                start_str, end_str = chunk.split("-", 1)
+                start, end = int(start_str), int(end_str)
+                if start > end:
+                    start, end = end, start
+                selected.update(range(start, end + 1))
+            except ValueError:
+                raise ValueError(f"Invalid range format in chunk: '{chunk}'")
+        else:
+            try:
+                selected.add(int(chunk))
+            except ValueError:
+                raise ValueError(f"Invalid numeric index: '{chunk}'")
+
+    out_of_range = {i for i in selected if i < 1 or i > total_files}
+    if out_of_range:
+        raise ValueError(
+            f"Index/indices {sorted(out_of_range)} out of range (Valid range is 1-{total_files})."
+        )
+    return selected
+
+def show_interactive_options(album_id, page_assets, start_idx, total_pages, current_page, total_items):
+    """Provides a prompt lifecycle allowing hands-free secondary script operations."""
     has_expired_tokens = False
     for asset in page_assets:
         token_status = parse_and_check_expiry(asset["token_expiry_timestamp"])
@@ -46,111 +79,114 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
             has_expired_tokens = True
             break
 
-    # Highlight Option 5 if auto_minter loop hasn't swept yet
-    if has_expired_tokens:
-        minter_style = "[bold red blink]mint.py (⚠️ EXPIRED TOKENS DETECTED)[/bold red blink]"
-    else:
-        minter_style = "[green]mint.py[/green]"
+    minter_style = "[bold red blink]mint.py (⚠️ EXPIRED)[/bold red blink]" if has_expired_tokens else "[green]mint.py[/green]"
 
     console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
     
     nav_hints = []
-    if current_page < total_pages:
-        nav_hints.append("[bold white]n[/bold white]: Next Page")
-    if current_page > 1:
-        nav_hints.append("[bold white]p[/bold white]: Prev Page")
-    if nav_hints:
-        console.print(f" Navigation -> {' | '.join(nav_hints)}")
+    if current_page < total_pages: nav_hints.append("[bold white]n[/bold white]: Next Page")
+    if current_page > 1: nav_hints.append("[bold white]p[/bold white]: Prev Page")
+    if nav_hints: console.print(f" Navigation -> {' | '.join(nav_hints)}")
         
-    console.print(" [bold white]1.[/bold white] Stream target asset(s) via [green]stream.py[/green] [dim] (Accepts: 5 | 1,3,5 | 1-5 | Enter for ALL)[/dim]")
-    console.print(" [bold white]2.[/bold white] Download target asset(s) via [green]download.py[/green] [dim] (Accepts: 5 | 3,7,12 | 1-10)[/dim]")
+    console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 1,3,5 | 1-5 | staged | Enter for ALL)[/dim]")
+    console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
     console.print(" [bold white]3.[/bold white] Forward all asset keys to [green]download.py[/green]")
-    console.print(" [bold white]4.[/bold white] Copy a specific item link directly to console standard output")
+    console.print(" [bold white]4.[/bold white] Copy link to stdout")
     console.print(f" [bold white]5.[/bold white] Mint new tokens via {minter_style}")
+    console.print(" [bold white]6.[/bold white] Stage/Unstage assets [dim](Accepts: 1-10 or 1,2,5 or all)[/dim]")
     console.print(" [bold white]q.[/bold white] Exit reader")
     
-    choices = ["1", "2", "3", "4", "5", "q"]
+    choices = ["1", "2", "3", "4", "5", "6", "q"]
     if current_page < total_pages: choices.append("n")
     if current_page > 1: choices.append("p")
     
     action = Prompt.ask("\n[bold cyan][?][/bold cyan] Choose option", choices=choices, default="q")
     
-    if action in ("n", "p", "q"):
-        return action
-        
-    if action == "5":
-        return "5"
-
-    # Action 1: Stream targets via streamer pipeline
-    if action == "1":
-        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](or Press Enter for ALL)[/dim]").strip()
-        if not selection:
-            selection = "all"
-
-        player = Prompt.ask("[bold cyan][?][/bold cyan] Select Media Player Engine", choices=["mpv", "vlc"], default="mpv")
-
-        console.print(f"\n[bold yellow][*][/bold yellow] Forwarding selection to streamer pipeline: [white]-n {selection} --player {player}[/white]")
-        try:
-            subprocess.run([sys.executable, "stream.py", "--db-id", str(album_id), "-n", selection, "--player", player])
-        except KeyboardInterrupt:
-            console.print("\n[bold yellow][!][/bold yellow] Streaming sequence aborted cleanly. Returning to dashboard...")
-
-        time.sleep(1)
-        return "1"  # signal caller to reload all_assets — same contract as "5"
+    if action in ("n", "p", "q"): return action
+    if action == "1": return action
 
     # Action 2: Download targeted assets
-    elif action == "2":
-        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](e.g. 5 or 3,7,12 or 1-10)[/dim]").strip()
-        if not selection:
-            console.print("[bold red][-][/bold red] Empty target configuration passed.")
-            time.sleep(1)
-            return None
+    if action == "2":
+        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, range, or 'staged'").strip()
+        if not selection: return None
 
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
+        is_staged_mode = selection.lower() == "staged"
+        if not is_staged_mode:
+            try: 
+                parse_selection(selection, total_items)
+            except ValueError as e:
+                console.print(f"[bold red][-][/bold red] Operational selection error: {e}")
+                time.sleep(1.5)
+                return None
+
+        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Worker concurrency (MAX=5)", default="").strip()
         
-        cmd = [sys.executable, "download.py", "--db-id", str(album_id), "-n", selection]
-        if workers:
+        if is_staged_mode:
+            cmd = [sys.executable, "download.py", "--db-id", str(album_id), "--staged"]
+            console.print(f"\n[bold yellow][*][/bold yellow] Forwarding staged components filter to downloader pipeline: [white]--staged{f' -w {workers}' if workers else ''}[/white]")
+        else:
+            cmd = [sys.executable, "download.py", "--db-id", str(album_id), "-n", selection]
+            console.print(f"\n[bold yellow][*][/bold yellow] Launching targeted execution filter payload: [white]-n {selection}{f' -w {workers}' if workers else ''}[/white]")
+            
+        if workers: 
             cmd.extend(["-w", workers])
-
-        console.print(f"\n[bold yellow][*][/bold yellow] Launching targeted execution filter payload: [white]-n {selection}{f' -w {workers}' if workers else ''}[/white]")
+            
         try:
             subprocess.run(cmd)
         except KeyboardInterrupt:
-            console.print("\n[bold yellow][!][/bold yellow] Targeted selection run aborted. Returning to dashboard...")
+            console.print("\n[bold yellow][!][/bold yellow] Download execution aborted.")
         time.sleep(1)
-
-    # Action 3: Forward all asset keys to downloader
+        return "2"  # signal caller to reload all_assets — download may have minted fresh tokens
+    # Action 3: Forward all keys
     elif action == "3":
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
-        
+        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Worker concurrency (MAX=5)", default="").strip()
         cmd = [sys.executable, "download.py", "--db-id", str(album_id)]
-        if workers:
-            cmd.extend(["-w", workers])
+        if workers: cmd.extend(["-w", workers])
+        subprocess.run(cmd)
+        time.sleep(1)
+        return "3"  # signal caller to reload all_assets — download may have minted fresh tokens
 
-        console.print(f"\n[bold yellow][*][/bold yellow] Handing file over to execution context: [dim white]python download.py --db-id {album_id}{f' -w {workers}' if workers else ''}[/dim white]")
-        try:
-            subprocess.run(cmd)
-        except KeyboardInterrupt:
-            console.print("\n[bold yellow][!][/bold yellow] downloader pipeline interrupted cleanly. Returning to dashboard...")
-            time.sleep(1)
-
-    # Action 4: Copy specific link directly to stdout console
+    # Action 4: Copy link
     elif action == "4":
         try:
-            end_idx = start_idx + len(page_assets) - 1
-            selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item row index ({start_idx}-{end_idx})")
+            selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter row index ({start_idx}-{start_idx + len(page_assets) - 1})")
             idx = int(selection) - start_idx
             if 0 <= idx < len(page_assets):
-                chosen_asset = page_assets[idx]
-                target_url = chosen_asset["signed_cdn_url"] or chosen_asset["source_url"] or "N/A"
-                console.print(f"\n[bold green][+][/bold green] Extracted Asset Stream Endpoint:\n\n[bold white]{target_url}[/bold white]\n")
-                Prompt.ask("[dim white]Press Enter to continue...[/dim white]")
-            else:
-                console.print("[bold red][-][/bold red] Selected row boundary error limits crossed.")
-                time.sleep(1.5)
-        except ValueError:
-            console.print("[bold red][-][/bold red] Invalid selection entry pattern.")
-            time.sleep(1.5)
+                url = page_assets[idx]["signed_cdn_url"] or page_assets[idx]["source_url"] or "N/A"
+                console.print(f"\n[bold green][+][/bold green] Endpoint: [bold white]{url}[/bold white]\n")
+                Prompt.ask("[dim white]Press Enter...[/dim white]")
+        except ValueError: console.print("[bold red][-][/bold red] Invalid selection.")
+
+    # Action 5: Mint tokens
+    elif action == "5":
+        subprocess.run([sys.executable, "mint.py", "--album-id", str(album_id)])
+        return "5"
+
+    # Action 6: Stage / Unstage using inspect_db.py
+    elif action == "6":
+        sub_choice = Prompt.ask("[bold cyan][?][/bold cyan] 1: Stage Album | 2: Unstage Album | 3: Stage Assets | 4: Unstage Assets", choices=["1", "2", "3", "4"], default="1")
+
+        if sub_choice == "1": subprocess.run([sys.executable, "inspect_db.py", "--stage-album", str(album_id)])
+        elif sub_choice == "2": subprocess.run([sys.executable, "inspect_db.py", "--unstage-album", str(album_id)])
+        elif sub_choice in ("3", "4"):
+            spec = Prompt.ask("[bold cyan][?][/bold cyan] Enter indices/ranges (or 'all')").strip()
+            if spec:
+                flag = "--stage-assets" if sub_choice == "3" else "--unstage-assets"
+                
+                if spec.lower() == "all":
+                    subprocess.run([sys.executable, "inspect_db.py", flag, "all"])
+                else:
+                    try:
+                        target_indices = parse_selection(spec, total_items)
+                        with db._get_connection() as conn:
+                            all_db_assets = conn.execute("SELECT id FROM assets WHERE album_id = ? ORDER BY track_number ASC;", (album_id,)).fetchall()
+                        
+                        asset_ids = [str(dict(a)["id"]) for i, a in enumerate(all_db_assets, start=1) if i in target_indices]
+                        if asset_ids:
+                            subprocess.run([sys.executable, "inspect_db.py", flag, ",".join(asset_ids)])
+                    except ValueError as e: console.print(f"[bold red][-][/bold red] Error: {e}")
+        time.sleep(1)
+        return "6"
 
     return None
 
@@ -162,15 +198,17 @@ def render_db_dashboard(album_id):
             if not album:
                 console.print("[bold red][-][/bold red] Database album record missing.")
                 return False
+            album_dict = dict(album)
 
         all_assets = db.get_album_assets(album_id)
 
+        staged_badge = " [bold green][STAGED][/bold green]" if album_dict.get("is_staged") == 1 else ""
         summary_text = (
-            f"[bold cyan]Source Origin Context:[/bold cyan] {album['search_term'] if album['search_term'] else 'Direct Browsing Link'}\n"
-            f"[bold cyan]Album Global Index:[/bold cyan] #{album['global_index']}\n"
-            f"[bold cyan]Reported Dataset Size:[/bold cyan] {format_bytes(album['aggregate_size'])} ({album['file_count']} files)"
+            f"[bold cyan]Source Origin Context:[/bold cyan] {album_dict['search_term'] if album_dict['search_term'] else 'Direct Browsing Link'}\n"
+            f"[bold cyan]Album Global Index:[/bold cyan] #{album_dict['global_index']}\n"
+            f"[bold cyan]Reported Dataset Size:[/bold cyan] {format_bytes(album_dict['aggregate_size'])} ({album_dict['file_count']} files){staged_badge}"
         )
-        console.print(Panel(summary_text, title=f"[bold green]Parsed DB Record: {album['title']}[/bold green]", expand=False))
+        console.print(Panel(summary_text, title=f"[bold green]Parsed DB Record: {album_dict['title']}[/bold green]", expand=False))
 
         if not all_assets:
             console.print("[bold yellow][!][/bold yellow] No item records discovered inside database assets table.")
@@ -196,23 +234,20 @@ def render_db_dashboard(album_id):
             table.add_column("Preferred Content Streaming Target URL", style="blue")
 
             for i, asset in enumerate(page_assets, start=start_idx + 1):
-                display_name = asset["original_filename"] or asset["title"] or "Unknown Target Asset"
-                readable_size = format_bytes(asset["raw_size_bytes"])
-                
-                target_url = asset["signed_cdn_url"] or asset["source_url"] or "N/A"
-                token_status = parse_and_check_expiry(asset["token_expiry_timestamp"])
+                asset_dict = dict(asset)
+                display_name = asset_dict["original_filename"] or asset_dict["title"] or "Unknown Target Asset"
+                if asset_dict.get("is_staged") == 1:
+                    display_name = f"[bold green][S][/bold green] {display_name}"
+                    
+                readable_size = format_bytes(asset_dict["raw_size_bytes"])
+                target_url = asset_dict["signed_cdn_url"] or asset_dict["source_url"] or "N/A"
+                token_status = parse_and_check_expiry(asset_dict["token_expiry_timestamp"])
 
-                table.add_row(
-                    str(i),
-                    display_name,
-                    readable_size,
-                    token_status,
-                    target_url
-                )
+                table.add_row(str(i), display_name, readable_size, token_status, target_url)
 
             console.print(table)
             
-            nav_action = show_interactive_options(album_id, page_assets, start_idx + 1, total_pages, current_page)
+            nav_action = show_interactive_options(album_id, page_assets, start_idx + 1, total_pages, current_page, total_items)
             
             if nav_action == "q":
                 return True
@@ -221,19 +256,36 @@ def render_db_dashboard(album_id):
             elif nav_action == "p":
                 current_page -= 1
             elif nav_action == "1":
-                # stream.py may have minted fresh tokens via the escape hatch —
-                # break to the outer loop so all_assets reloads from disk.
-                break
-            elif nav_action == "5":
-                console.print(f"\n[bold yellow][*][/bold yellow] Launching token minter for DB ID: {album_id}")
-                try:
-                    # UPDATED: Swapped --db-id to --album-id to match mint.py's argument structure
-                    subprocess.run([sys.executable, "mint.py", "--album-id", str(album_id)])
-                except KeyboardInterrupt:
-                    console.print("\n[bold red][-][/bold red] Minter execution interrupted.")
+                selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, range, or 'staged' [dim](or Press Enter for ALL)[/dim]").strip()
+                if not selection:
+                    selection = "all"
+                
+                is_staged_mode = selection.lower() == "staged"
+                if not is_staged_mode and selection.lower() != "all":
+                    try:
+                        parse_selection(selection, total_items)
+                    except ValueError as e:
+                        console.print(f"[bold red][-][/bold red] Operational selection error: {e}")
+                        time.sleep(1.5)
+                        break
+
+                player = Prompt.ask("[bold cyan][?][/bold cyan] Select Media Player Engine", choices=["mpv", "vlc"], default="mpv")
+                
+                if is_staged_mode:
+                    cmd = [sys.executable, "stream.py", "--db-id", str(album_id), "--staged", "--player", player]
+                    console.print(f"\n[bold yellow][*][/bold yellow] Forwarding staged selection to streamer pipeline: [white]--staged --player {player}[/white]")
+                else:
+                    cmd = [sys.executable, "stream.py", "--db-id", str(album_id), "-n", selection, "--player", player]
+                    console.print(f"\n[bold yellow][*][/bold yellow] Forwarding selection to streamer pipeline: [white]-n {selection} --player {player}[/white]")
                     
-                console.print("[bold green][+][/bold green] Minter execution finished. Reloading database state...")
-                break # Break out of pagination loop to query fresh database data states
+                try:
+                    subprocess.run(cmd)
+                except KeyboardInterrupt:
+                    console.print("\n[bold yellow][!][/bold yellow] Streaming sequence aborted cleanly. Returning to dashboard...")
+                time.sleep(1)
+                break
+            elif nav_action in ("2", "3", "5", "6"):
+                break
                 
     return True
 
@@ -241,11 +293,10 @@ if __name__ == "__main__":
     if os.name == 'nt':
         subprocess.run("", shell=True)
 
-    # 1. CLI Entry Point
+    # 1. CLI Entry Point Setup
     if len(sys.argv) >= 2:
         target_path = clean_dragged_path(sys.argv[1])
         if target_path.endswith('.json') and os.path.exists(target_path):
-            # Parse and register the payload directly into SQLite
             try:
                 with open(target_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -254,14 +305,13 @@ if __name__ == "__main__":
             except Exception as e:
                 console.print(f"[bold red][-][/bold red] JSON file registration failed: {e}")
         else:
-            # Check if user input is an existing DB ID directly
             try:
                 db_id = int(target_path)
                 render_db_dashboard(db_id)
             except ValueError:
                 console.print("[bold red][-][/bold red] Error: Input must be a valid JSON file path or database record ID.")
     else:
-        # 2. Interactive DB Album Record Selector
+        # 2. Interactive Selector Interface Loop
         while True:
             try:
                 albums = db.get_all_albums()
@@ -277,7 +327,9 @@ if __name__ == "__main__":
                 else:
                     console.print("\n[bold magenta][*] Discovered Albums Cataloged in DB:[/bold magenta]")
                     for idx, a in enumerate(albums, start=1):
-                        console.print(f"  [bold cyan]{idx}[/bold cyan] • {a['title']} ({a['file_count']} items) [dim white](DB ID: {a['id']})[/dim white]")
+                        a_dict = dict(a)
+                        staged_flag = " [bold green][STAGED][/bold green]" if a_dict.get('is_staged') == 1 else ""
+                        console.print(f"  [bold cyan]{idx}[/bold cyan] • {a_dict['title']} ({a_dict['file_count']} items){staged_flag} [dim white](DB ID: {a_dict['id']})[/dim white]")
                     console.print()
 
                     target_input = Prompt.ask("[bold cyan][?][/bold cyan] Choose a record number, drop a fresh JSON path, or 'q' to exit").strip()
@@ -294,7 +346,6 @@ if __name__ == "__main__":
                         render_db_dashboard(db_id)
                     else:
                         try:
-                            # Map selected row back to true album ID
                             choice_idx = int(target_input) - 1
                             if 0 <= choice_idx < len(albums):
                                 render_db_dashboard(albums[choice_idx]["id"])

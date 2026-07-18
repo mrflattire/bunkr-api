@@ -56,6 +56,11 @@ def parse_arguments():
         default=None,
         help="Choose the media player backend ('mpv' or 'vlc')."
     )
+    parser.add_argument(
+        '--staged',
+        action='store_true',
+        help="Automatically stream all assets or albums marked as staged in the database."
+    )
     return parser.parse_args()
 
 
@@ -361,22 +366,22 @@ def prompt_for_inputs():
     Scans the tracking database to display cataloged albums, lists local JSON files
     as legacy fallbacks, and prompts for DB ID, selection number, or physical path.
     """
-    # 1. Gather Database Albums (Utilizing read.py exact schemas and queries)
     db_albums = []
     try:
         db_albums = db.get_all_albums() or []
     except Exception as e:
         console.print(f"[bold red][-][/bold red] Warning: Could not query DB catalog: {e}")
 
-    # Display the unified prompt interface
     console.print()
     if db_albums:
         console.print("[bold magenta][*] Discovered Albums Cataloged in DB:[/bold magenta]")
         for idx, album in enumerate(db_albums, start=1):
-            console.print(f"  [cyan]{idx:2d}[/cyan] • [yellow]{album['title']}[/yellow] ({album['file_count']} items) [dim](DB ID: {album['id']})[/dim]")
+            album_dict = dict(album)
+            is_staged_flag = " [bold green][STAGED][/bold green]" if album_dict.get('is_staged') == 1 else ""
+            console.print(f"  [cyan]{idx:2d}[/cyan] • [yellow]{album_dict['title']}[/yellow] ({album_dict['file_count']} items){is_staged_flag} [dim](DB ID: {album_dict['id']})[/dim]")
         console.print()
 
-    # 2. Handle Input Choices with Safe Cancel Exit Triggers
+    console.print("[dim]Special keywords: 'staged' (pulls all staged items)[/dim]")
     try:
         raw = Prompt.ask("[bold cyan][?][/bold cyan] Choose a record number, drop a fresh JSON path, or 'q' to exit").strip()
     except KeyboardInterrupt:
@@ -386,6 +391,16 @@ def prompt_for_inputs():
     if raw.lower() in ('q', 'quit', 'exit'):
         console.print("[bold yellow][!][/bold yellow] Execution exited by user.")
         sys.exit(0)
+
+    if raw.lower() == 'staged':
+        try:
+            player = Prompt.ask("[bold cyan][?][/bold cyan] Select Media Player Engine", choices=["mpv", "vlc"], default="mpv")
+            if player.lower() in ('q', 'quit', 'exit'):
+                sys.exit(0)
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow][!][/bold yellow] Session cancelled.")
+            sys.exit(0)
+        return None, None, 'all', player, True
 
     raw = clean_dragged_path(raw)
     
@@ -421,7 +436,7 @@ def prompt_for_inputs():
         console.print("\n[bold yellow][!][/bold yellow] Session cancelled.")
         sys.exit(0)
 
-    return input_path, db_id, selection, player
+    return input_path, db_id, selection, player, False
 
 
 async def resolve_selected_assets_async(db_assets: list):
@@ -485,14 +500,16 @@ async def resolve_selected_assets_async(db_assets: list):
 def main():
     input_json_path = None
     db_id = None
+    run_staged = False
 
     if len(sys.argv) == 1:
-        input_json_path, db_id, selection_arg, player_choice = prompt_for_inputs()
+        input_json_path, db_id, selection_arg, player_choice, run_staged = prompt_for_inputs()
     else:
         args = parse_arguments()
         db_id = args.db_id
+        run_staged = args.staged
 
-        if not db_id:
+        if not db_id and not run_staged:
             if args.input:
                 input_json_path = Path(clean_dragged_path(args.input)).expanduser()
             else:
@@ -501,10 +518,13 @@ def main():
                     if raw_input.lower() in ('q', 'quit', 'exit'):
                         sys.exit(0)
                     raw_input = clean_dragged_path(raw_input)
-                    try:
-                        db_id = int(raw_input)
-                    except ValueError:
-                        input_json_path = Path(raw_input).expanduser()
+                    if raw_input.lower() == 'staged':
+                        run_staged = True
+                    else:
+                        try:
+                            db_id = int(raw_input)
+                        except ValueError:
+                            input_json_path = Path(raw_input).expanduser()
                 except KeyboardInterrupt:
                     console.print("\n[bold yellow][!][/bold yellow] Session canceled.")
                     sys.exit(0)
@@ -512,15 +532,18 @@ def main():
         if args.number is not None:
             selection_arg = args.number
         else:
-            try:
-                selection_arg = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index or range [dim](or Press Enter for ALL)[/dim]").strip()
-                if selection_arg.lower() in ('q', 'quit', 'exit'):
+            if run_staged:
+                selection_arg = 'all'
+            else:
+                try:
+                    selection_arg = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index or range [dim](or Press Enter for ALL)[/dim]").strip()
+                    if selection_arg.lower() in ('q', 'quit', 'exit'):
+                        sys.exit(0)
+                    if not selection_arg:
+                        selection_arg = 'all'
+                except KeyboardInterrupt:
+                    console.print("\n[bold yellow][!][/bold yellow] Session canceled.")
                     sys.exit(0)
-                if not selection_arg:
-                    selection_arg = 'all'
-            except KeyboardInterrupt:
-                console.print("\n[bold yellow][!][/bold yellow] Session canceled.")
-                sys.exit(0)
 
         if args.player is not None:
             player_choice = args.player
@@ -535,7 +558,29 @@ def main():
 
     files_list = []
 
-    if db_id:
+    if run_staged:
+        console.print("[bold cyan][*] Extracting all active staged files across database queues for streaming...[/bold cyan]")
+        try:
+            with db._get_connection() as conn:
+                conn.execute("PRAGMA busy_timeout = 5000;")
+                assets = conn.execute("""
+                    SELECT a.* FROM assets a
+                    LEFT JOIN albums al ON a.album_id = al.id
+                    WHERE a.is_staged = 1 OR al.is_staged = 1
+                    ORDER BY a.album_id, a.track_number ASC;
+                """).fetchall()
+                for asset in assets:
+                    files_list.append({
+                        "db_asset_id": asset["id"],
+                        "title": asset["title"] or asset["original_filename"] or f"Track_{asset['track_number']}",
+                        "signed_cdn_url": asset["signed_cdn_url"],
+                        "source_url": asset["source_url"]
+                    })
+        except Exception as e:
+            console.print(f"[bold red][-][/bold red] Database query failed: {e}")
+            sys.exit(1)
+
+    elif db_id:
         console.print(f"[*] Querying database tracker for Album ID: {db_id}...")
         try:
             with db._get_connection() as conn:
@@ -614,7 +659,7 @@ def main():
                 console.print(f"[bold yellow][!][/bold yellow] Skipping Item {idx} - '{title[:30]}' (Requires signature token refresh).")
 
     if not playback_queue:
-        console.print("[bold red][-][/bold red] No playable tracks available. Run auto_mint.py.")
+        console.print("[bold red][-][/bold red] No playable tracks available.")
         sys.exit(1)
 
     if player_choice == "vlc":
