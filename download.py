@@ -316,7 +316,7 @@ def execute_ytdlp_task(index: int, total_files: int, asset_data: dict, slot_id: 
         
         if db_id:
             db.update_download_status(db_id, "COMPLETED", local_path=str(dest))
-            with db._get_connection() as conn:
+            with db.connection() as conn:
                 conn.execute("UPDATE assets SET is_staged = 0 WHERE id = ?;", (db_id,))
             
         set_idle()
@@ -348,21 +348,22 @@ async def resolve_download_tokens_async(indexed_files: list):
     now = int(time.time())
     needed = []
 
-    for _, item in indexed_files:
-        db_id = item.get("db_asset_id")
-        if not db_id:
-            continue
-            
-        with db._get_connection() as conn:
-            asset_row = conn.execute(
-                "SELECT id, true_file_id, source_url, signed_cdn_url, token_expiry_timestamp FROM assets WHERE id = ?;",
-                (db_id,)
-            ).fetchone()
-            
-        if asset_row:
-            expiry = asset_row["token_expiry_timestamp"]
-            if not asset_row["signed_cdn_url"] or not expiry or expiry <= now + 120:
-                needed.append(dict(asset_row))
+    db_ids = [item.get("db_asset_id") for _, item in indexed_files if item.get("db_asset_id")]
+    if not db_ids:
+        return
+
+    with db.connection() as conn:
+        placeholders = ", ".join("?" for _ in db_ids)
+        rows = conn.execute(
+            f"SELECT id, true_file_id, source_url, signed_cdn_url, token_expiry_timestamp "
+            f"FROM assets WHERE id IN ({placeholders});",
+            db_ids
+        ).fetchall()
+
+    for asset_row in rows:
+        expiry = asset_row["token_expiry_timestamp"]
+        if not asset_row["signed_cdn_url"] or not expiry or expiry <= now + 120:
+            needed.append(dict(asset_row))
 
     if not needed:
         return
@@ -455,8 +456,7 @@ def download_assets():
     if run_staged:
         console.print("[bold cyan][*] Extracting all active staged files across database queues...[/bold cyan]")
         try:
-            with db._get_connection() as conn:
-                conn.execute("PRAGMA busy_timeout = 5000;")
+            with db.connection() as conn:
                 assets = conn.execute("""
                     SELECT a.* FROM assets a
                     LEFT JOIN albums al ON a.album_id = al.id
@@ -478,8 +478,7 @@ def download_assets():
     elif run_triage:
         console.print("[bold red][*] Auto-Triage: Aggregating all broken or FAILED download tracks...[/bold red]")
         try:
-            with db._get_connection() as conn:
-                conn.execute("PRAGMA busy_timeout = 5000;")
+            with db.connection() as conn:
                 assets = conn.execute("SELECT * FROM assets WHERE download_status = 'FAILED' ORDER BY album_id, track_number ASC;").fetchall()
                 for asset in assets:
                     files_list.append({
@@ -496,8 +495,7 @@ def download_assets():
     elif db_id:
         console.print(f"[*] Querying tracking database records for Album ID: {db_id}...")
         try:
-            with db._get_connection() as conn:
-                conn.execute("PRAGMA busy_timeout = 5000;")
+            with db.connection() as conn:
                 album = conn.execute("SELECT * FROM albums WHERE id = ?;", (db_id,)).fetchone()
                 if not album:
                     console.print(f"[bold red][-][/bold red] Database Album ID #{db_id} does not exist.")
@@ -543,7 +541,7 @@ def download_assets():
     if db_id or run_staged or run_triage:
         import asyncio
         if sys.platform == 'win32':
-            asyncio.run(resolve_download_tokens_async(indexed_files), loop_factory=asyncio.SelectorEventLoop)
+            asyncio.run(resolve_download_tokens_async(indexed_files), loop_bunkr=asyncio.SelectorEventLoop)
         else:
             asyncio.run(resolve_download_tokens_async(indexed_files))
 

@@ -178,7 +178,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
                 else:
                     try:
                         target_indices = parse_selection(spec, total_items)
-                        with db._get_connection() as conn:
+                        with db.connection() as conn:
                             all_db_assets = conn.execute("SELECT id FROM assets WHERE album_id = ? ORDER BY track_number ASC;", (album_id,)).fetchall()
                         
                         asset_ids = [str(dict(a)["id"]) for i, a in enumerate(all_db_assets, start=1) if i in target_indices]
@@ -193,7 +193,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
 def render_db_dashboard(album_id):
     """Main rendering dashboard operating against SQLite data states."""
     while True:
-        with db._get_connection() as conn:
+        with db.connection() as conn:
             album = conn.execute("SELECT * FROM albums WHERE id = ?;", (album_id,)).fetchone()
             if not album:
                 console.print("[bold red][-][/bold red] Database album record missing.")

@@ -1,7 +1,7 @@
 # core.py
 import sqlite3
 import time
-from contextlib import closing
+from contextlib import closing, contextmanager
 from typing import List, Optional
 
 # Decoupled utilities are imported from utils.py to maintain thin DB context
@@ -19,6 +19,23 @@ class DatabaseManager:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
+
+    @contextmanager
+    def connection(self):
+        """
+        Public, always-closing connection for external callers (download.py,
+        stream.py, mint.py, etc). `with db.connection() as conn:` both
+        commits/rolls back (like a bare `with conn:`) AND closes the
+        connection on exit — a bare `with db._get_connection() as conn:`
+        only does the former, leaking a connection/fd every call. Prefer
+        this over touching _get_connection() directly from outside core.py.
+        """
+        conn = self._get_connection()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_db(self):
         """Initializes tables, indexes, and default system configurations."""

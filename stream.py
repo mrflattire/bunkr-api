@@ -446,19 +446,23 @@ async def resolve_selected_assets_async(db_assets: list):
     
     now = int(time.time())
     needed = []
-    
-    for item in db_assets:
-        asset_id = item["db_asset_id"]
-        with db._get_connection() as conn:
-            asset_row = conn.execute(
-                "SELECT id, true_file_id, source_url, signed_cdn_url, token_expiry_timestamp FROM assets WHERE id = ?;", 
-                (asset_id,)
-            ).fetchone()
-        
-        if asset_row:
-            expiry = asset_row["token_expiry_timestamp"]
-            if not asset_row["signed_cdn_url"] or not expiry or expiry <= now + 60:
-                needed.append(dict(asset_row))
+
+    asset_ids = [item["db_asset_id"] for item in db_assets]
+    if not asset_ids:
+        return
+
+    with db.connection() as conn:
+        placeholders = ", ".join("?" for _ in asset_ids)
+        rows = conn.execute(
+            f"SELECT id, true_file_id, source_url, signed_cdn_url, token_expiry_timestamp "
+            f"FROM assets WHERE id IN ({placeholders});",
+            asset_ids
+        ).fetchall()
+
+    for asset_row in rows:
+        expiry = asset_row["token_expiry_timestamp"]
+        if not asset_row["signed_cdn_url"] or not expiry or expiry <= now + 60:
+            needed.append(dict(asset_row))
                 
     if not needed:
         return
@@ -561,8 +565,7 @@ def main():
     if run_staged:
         console.print("[bold cyan][*] Extracting all active staged files across database queues for streaming...[/bold cyan]")
         try:
-            with db._get_connection() as conn:
-                conn.execute("PRAGMA busy_timeout = 5000;")
+            with db.connection() as conn:
                 assets = conn.execute("""
                     SELECT a.* FROM assets a
                     LEFT JOIN albums al ON a.album_id = al.id
@@ -583,7 +586,7 @@ def main():
     elif db_id:
         console.print(f"[*] Querying database tracker for Album ID: {db_id}...")
         try:
-            with db._get_connection() as conn:
+            with db.connection() as conn:
                 album = conn.execute("SELECT * FROM albums WHERE id = ?;", (db_id,)).fetchone()
                 if not album:
                     console.print(f"[bold red][-][/bold red] Database Album ID #{db_id} does not exist.")
