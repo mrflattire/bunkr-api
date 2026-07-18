@@ -87,7 +87,7 @@ def mint_now(file_id: str) -> str:
             return await mint_single_url_async(session, file_id)
 
     if sys.platform == 'win32':
-        return asyncio.run(_run_single(), loop_factory=asyncio.SelectorEventLoop)
+        return asyncio.run(_run_single(), loop_bunkr=asyncio.SelectorEventLoop)
     else:
         return asyncio.run(_run_single())
 
@@ -175,18 +175,15 @@ def daemon_loop(album_id: int = None):
     while True:
         try:
             poll_interval = int(db.get_config_val("minter_poll_interval_seconds", "60"))
-            raw_assets = db.get_needs_refresh()
+            raw_assets = db.get_needs_refresh(album_id=album_id)
             expiring_assets = [dict(row) for row in raw_assets]
-            
-            if album_id:
-                expiring_assets = [asset for asset in expiring_assets if asset.get("album_id") == album_id]
             
             if expiring_assets:
                 # Dispatch async loop for concurrent batch minting
                 if sys.platform == 'win32':
                     asyncio.run(
                         refresh_all_tokens_async(db, expiring_assets, max_workers),
-                        loop_factory=asyncio.SelectorEventLoop
+                        loop_bunkr=asyncio.SelectorEventLoop
                     )
                 else:
                     asyncio.run(refresh_all_tokens_async(db, expiring_assets, max_workers))
