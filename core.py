@@ -101,6 +101,13 @@ class DatabaseManager:
                     CREATE INDEX IF NOT EXISTS idx_assets_download_status
                     ON assets(download_status);
                 """)
+                # SQLite does NOT auto-index FK columns — every album-scoped
+                # query (get_album_assets, targeted mint refresh) was doing
+                # a full table scan on assets despite the FK constraint.
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_assets_album_id
+                    ON assets(album_id);
+                """)
 
                 # Seed Defaults
                 conn.execute("""
@@ -207,17 +214,32 @@ class DatabaseManager:
 
     # --- THE HYBRID MINTER CORE API ---
 
-    def get_needs_refresh(self) -> List[sqlite3.Row]:
-        """Retrieves assets whose signatures expire within our lookahead window."""
+    def get_needs_refresh(self, album_id: Optional[int] = None) -> List[sqlite3.Row]:
+        """
+        Retrieves assets whose signatures expire within our lookahead window.
+        Pass album_id to scope the query to one album at the SQL level —
+        e.g. daemon_loop's targeted --album-id run — instead of fetching
+        every stale asset across the whole DB and discarding most of it in
+        Python. Backed by idx_assets_expiry (+ idx_assets_album_id when
+        album_id is given), so this stays fast as the library grows.
+        """
         lookahead = int(self.get_config_val("token_buffer_seconds", "600"))
         now_with_buffer = int(time.time()) + lookahead
 
         with closing(self._get_connection()) as conn:
-            cursor = conn.execute("""
-                SELECT * FROM assets 
-                WHERE token_expiry_timestamp IS NULL 
-                   OR token_expiry_timestamp <= ?;
-            """, (now_with_buffer,))
+            if album_id is not None:
+                cursor = conn.execute("""
+                    SELECT * FROM assets 
+                    WHERE album_id = ?
+                      AND (token_expiry_timestamp IS NULL 
+                           OR token_expiry_timestamp <= ?);
+                """, (album_id, now_with_buffer))
+            else:
+                cursor = conn.execute("""
+                    SELECT * FROM assets 
+                    WHERE token_expiry_timestamp IS NULL 
+                       OR token_expiry_timestamp <= ?;
+                """, (now_with_buffer,))
             return cursor.fetchall()
 
     def get_valid_url(self, asset_id: int) -> str:
