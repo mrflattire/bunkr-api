@@ -541,7 +541,7 @@ def download_assets():
     if db_id or run_staged or run_triage:
         import asyncio
         if sys.platform == 'win32':
-            asyncio.run(resolve_download_tokens_async(indexed_files), loop_bunkr=asyncio.SelectorEventLoop)
+            asyncio.run(resolve_download_tokens_async(indexed_files), loop_factory=asyncio.SelectorEventLoop)
         else:
             asyncio.run(resolve_download_tokens_async(indexed_files))
 

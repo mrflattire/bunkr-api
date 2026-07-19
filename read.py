@@ -79,7 +79,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
             has_expired_tokens = True
             break
 
-    minter_style = "[bold red blink]mint.py (⚠️ EXPIRED)[/bold red blink]" if has_expired_tokens else "[green]mint.py[/green]"
+    minter_style = "[bold red blink]Mint new tokens (⚠️ EXPIRED)[/bold red blink]" if has_expired_tokens else "[bold white]Mint new tokens[/bold white]"
 
     console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
     
@@ -92,7 +92,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
     console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
     console.print(" [bold white]3.[/bold white] Forward all asset keys to [green]download.py[/green]")
     console.print(" [bold white]4.[/bold white] Copy link to stdout")
-    console.print(f" [bold white]5.[/bold white] Mint new tokens via {minter_style}")
+    console.print(f" [bold white]5.[/bold white] {minter_style}")
     console.print(" [bold white]6.[/bold white] Stage/Unstage assets [dim](Accepts: 1-10 or 1,2,5 or all)[/dim]")
     console.print(" [bold white]q.[/bold white] Exit reader")
     
@@ -289,6 +289,38 @@ def render_db_dashboard(album_id):
                 
     return True
 
+def launch_scraper_and_get_new_album():
+    """
+    Runs scrape.py fully interactively (it prompts for search term, mode,
+    sort, per-page, and album selection on its own — no flags needed) and
+    figures out what it registered by diffing the album list before/after,
+    rather than parsing its Rich-formatted console output for the new ID.
+    Returns the new album's db id, or None if nothing new was registered
+    (user cancelled scrape.py, or it hit an error before syncing).
+    """
+    before_ids = {a["id"] for a in db.get_all_albums()}
+
+    try:
+        subprocess.run([sys.executable, "scrape.py"])
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow][!][/bold yellow] Scrape session aborted.")
+
+    after_albums = db.get_all_albums()
+    new_ones = [a for a in after_albums if a["id"] not in before_ids]
+
+    if not new_ones:
+        console.print("[bold yellow][!][/bold yellow] No new album was registered.")
+        return None
+
+    if len(new_ones) > 1:
+        # register_album_from_json upserts on conflict, so a single scrape.py
+        # run registers exactly one album — this is just a defensive fallback
+        # in case that assumption ever changes.
+        console.print(f"[bold yellow][!][/bold yellow] {len(new_ones)} new albums detected — opening the most recent.")
+
+    return new_ones[0]["id"]
+
+
 if __name__ == "__main__":
     if os.name == 'nt':
         subprocess.run("", shell=True)
@@ -316,10 +348,19 @@ if __name__ == "__main__":
             try:
                 albums = db.get_all_albums()
                 if not albums:
-                    console.print("[bold yellow][!][/bold yellow] No records tracked in database. Drag and drop a payload JSON file here to register it.")
-                    target_input = clean_dragged_path(Prompt.ask("[bold cyan][?][/bold cyan] Enter path to JSON file (or 'q' to exit)"))
+                    console.print("[bold yellow][!][/bold yellow] No records tracked in database.")
+                    console.print()
+                    console.print(" [bold white]s.[/bold white] Search for or discover a new album")
+                    console.print(" [bold white]q.[/bold white] Exit reader")
+                    console.print()
+                    target_input = clean_dragged_path(Prompt.ask("[bold cyan][?][/bold cyan] Drop a fresh JSON path, or select an option"))
                     if target_input.lower() in ('q', 'quit', 'exit'):
                         break
+                    if target_input.lower() in ('s', 'scrape'):
+                        new_id = launch_scraper_and_get_new_album()
+                        if new_id:
+                            render_db_dashboard(new_id)
+                        continue
                     if os.path.exists(target_input):
                         with open(target_input, "r", encoding="utf-8") as f:
                             db_id = db.register_album_from_json(json.load(f))
@@ -330,12 +371,22 @@ if __name__ == "__main__":
                         a_dict = dict(a)
                         staged_flag = " [bold green][STAGED][/bold green]" if a_dict.get('is_staged') == 1 else ""
                         console.print(f"  [bold cyan]{idx}[/bold cyan] • {a_dict['title']} ({a_dict['file_count']} items){staged_flag} [dim white](DB ID: {a_dict['id']})[/dim white]")
+
+                    console.print()
+                    console.print(" [bold white]s.[/bold white] Search for or discover a new album")
+                    console.print(" [bold white]q.[/bold white] Exit reader")
                     console.print()
 
-                    target_input = Prompt.ask("[bold cyan][?][/bold cyan] Choose a record number, drop a fresh JSON path, or 'q' to exit").strip()
+                    target_input = Prompt.ask("[bold cyan][?][/bold cyan] Choose a record number, drop a fresh JSON path, or select an option").strip()
                     if target_input.lower() in ('q', 'quit', 'exit'):
                         break
-                        
+
+                    if target_input.lower() in ('s', 'scrape'):
+                        new_id = launch_scraper_and_get_new_album()
+                        if new_id:
+                            render_db_dashboard(new_id)
+                        continue
+
                     target_input = clean_dragged_path(target_input)
                     if not target_input:
                         continue

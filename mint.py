@@ -87,7 +87,7 @@ def mint_now(file_id: str) -> str:
             return await mint_single_url_async(session, file_id)
 
     if sys.platform == 'win32':
-        return asyncio.run(_run_single(), loop_bunkr=asyncio.SelectorEventLoop)
+        return asyncio.run(_run_single(), loop_factory=asyncio.SelectorEventLoop)
     else:
         return asyncio.run(_run_single())
 
@@ -167,10 +167,10 @@ def daemon_loop(album_id: int = None):
     
     if album_id:
         console.print(f"[bold green][+][/bold green] Token Minter active for targeted Album ID: [bold cyan]{album_id}[/bold cyan]")
+        console.print("[bold dim]Running one pass, then exiting.[/bold dim]")
     else:
         console.print("[bold green][+][/bold green] Token Minter Background Daemon initialized.")
-        
-    console.print("[bold dim]Monitoring database. Press Ctrl+C to stop.[/bold dim]")
+        console.print("[bold dim]Monitoring database. Press Ctrl+C to stop.[/bold dim]")
     
     while True:
         try:
@@ -183,7 +183,7 @@ def daemon_loop(album_id: int = None):
                 if sys.platform == 'win32':
                     asyncio.run(
                         refresh_all_tokens_async(db, expiring_assets, max_workers),
-                        loop_bunkr=asyncio.SelectorEventLoop
+                        loop_factory=asyncio.SelectorEventLoop
                     )
                 else:
                     asyncio.run(refresh_all_tokens_async(db, expiring_assets, max_workers))
@@ -198,6 +198,14 @@ def daemon_loop(album_id: int = None):
             break
         except Exception as e:
             console.print(f"[bold red][x] Loop exception encountered:[/bold red] {e}")
+            if album_id:
+                # Targeted mode is a one-shot pass, not a monitoring loop —
+                # a real bug here (like the loop_factory rename earlier)
+                # should surface immediately and hand control back to
+                # whatever called mint.py (e.g. read.py's subprocess.run),
+                # not retry silently every 10s until someone Ctrl+C's out.
+                console.print("[bold red][x] Targeted run failed — exiting instead of retrying.[/bold red]")
+                sys.exit(1)
             time.sleep(10)
 
 

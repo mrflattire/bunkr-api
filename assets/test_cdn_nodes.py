@@ -12,11 +12,12 @@ CDN_NODES = [
     "c1mp-b.cdn.cr",
     "c4s5-b.cdn.cr",
     "c2ck-b.cdn.cr",
+    "c3vi1-b.cdn.cr",
     "prxp-b.cdn.cr"
 ]
 
 # The target URL containing the asset path and fresh token parameters
-faulty_url = "INSERT_TEST_URL"
+faulty_url = "https://prxp-b.cdn.cr/storage/media/VTS_01_5-DUzavUbJ.VOB?n=VTS_01_5.VOB&token=12d6f221ee281f73697cbdd009a0443bb973af8e&ex=1784410577"
 
 def find_working_cdn(target_url, nodes):
     # Extract the /storage/media/... path and query tokens from the faulty URL string
