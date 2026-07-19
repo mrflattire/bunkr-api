@@ -27,7 +27,7 @@ from core import DatabaseManager
 from utils import format_bytes, clean_dragged_path
 
 # Paths config
-DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "factory_downloads"
+DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "bunkr_downloads"
 
 console = Console()
 db = DatabaseManager()
@@ -273,8 +273,8 @@ def execute_ytdlp_task(index: int, total_files: int, asset_data: dict, slot_id: 
         "--socket-timeout", "25",
         "--continue",
         "--newline",
-        "--referer", "https://factory.cr/",
-        "--add-header", "Origin:https://factory.cr",
+        "--referer", "https://bunkr.cr/",
+        "--add-header", "Origin:https://bunkr.cr",
         "--add-header", (
             "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
