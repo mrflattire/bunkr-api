@@ -9,6 +9,23 @@ Usage:
     python inspect_db.py --table assets --all # dump every row (careful on big tables)
     python inspect_db.py --sql "SELECT * FROM assets WHERE download_status='FAILED'"
 
+    # Per-album breakdown: files, completion %, failed count, staged count,
+    # and total size — one row per album. Complements the global dashboard,
+    # which totals across the whole DB rather than showing per-album detail.
+    python inspect_db.py --albums
+
+    # Which assets are stale or about to be, right now — same lookahead
+    # window (token_buffer_seconds) get_needs_refresh() uses, so this shows
+    # exactly what a mint pass would act on. Useful precisely BECAUSE it
+    # doesn't depend on mint.py's daemon actually being run.
+    python inspect_db.py --expiring
+
+    # Quick glance at everything staged right now — albums and assets
+    # both, since album-level and asset-level staging don't cascade
+    # back up to each other (staging an asset directly doesn't mark
+    # its album staged, and vice versa doesn't show here as a diff view).
+    python inspect_db.py --staged
+
     # Dashboard (zero args only — any flag at all skips it in favor of the
     # standard table dump). Shows row counts + pipeline metrics per table.
     # The "Staged" metrics need an is_staged column that doesn't ship with
@@ -53,6 +70,12 @@ Usage:
     # so there's nothing to "rebuild" here, only data to clear.
     python inspect_db.py --wipe
 
+    # Scoped version: delete ONE album + its assets, leave everything else
+    # alone. No auto-VACUUM (unlike --wipe/--nuke) since that cost scales
+    # with the whole DB, not the rows removed — run --exec "VACUUM;"
+    # yourself afterward if you want to reclaim space.
+    python inspect_db.py --wipe-album 7
+
     # True factory reset: drops every table, INCLUDING system_config, so
     # tuned settings revert to defaults too. Nothing to run afterward —
     # the next DatabaseManager() (e.g. next time you scrape a new album)
@@ -67,6 +90,7 @@ Usage:
 import argparse
 import sqlite3
 import sys
+import time
 from contextlib import closing
 
 from rich.console import Console
@@ -75,6 +99,7 @@ from rich.pretty import pprint
 from rich.panel import Panel
 
 from core import DatabaseManager
+from utils import format_bytes
 
 console = Console()
 
@@ -148,6 +173,160 @@ def display_global_dashboard(conn: sqlite3.Connection):
         summary_table.add_row(table, str(count), metrics)
 
     console.print(Panel(summary_table, border_style="magenta", title="[bold white]Media Tracker Management System[/bold white]"))
+
+
+def display_albums_breakdown(conn: sqlite3.Connection):
+    """
+    One row per album: file count, download completion %, staged status,
+    and total size. The global dashboard tells you totals across the
+    whole DB; this tells you which specific albums still need attention.
+    """
+    albums = conn.execute("SELECT * FROM albums ORDER BY id ASC;").fetchall()
+    if not albums:
+        console.print("[bold yellow][!][/bold yellow] No albums in the database.")
+        return
+
+    def safe_scalar(sql: str, params: tuple, fallback):
+        try:
+            row = conn.execute(sql, params).fetchone()
+            return row[0] if row and row[0] is not None else fallback
+        except sqlite3.OperationalError:
+            return fallback
+
+    t = Table(title="[bold magenta]Per-Album Breakdown[/bold magenta]", expand=True)
+    t.add_column("ID", justify="right", style="cyan")
+    t.add_column("Title", style="white")
+    t.add_column("Files", justify="right")
+    t.add_column("Completed %", justify="right")
+    t.add_column("Failed", justify="right", style="red")
+    t.add_column("Staged", justify="right", style="green")
+    t.add_column("Size", justify="right", style="magenta")
+
+    for a in albums:
+        total = safe_scalar("SELECT COUNT(*) FROM assets WHERE album_id = ?;", (a["id"],), 0)
+        comp = safe_scalar("SELECT COUNT(*) FROM assets WHERE album_id = ? AND download_status='COMPLETED';", (a["id"],), 0)
+        fail = safe_scalar("SELECT COUNT(*) FROM assets WHERE album_id = ? AND download_status='FAILED';", (a["id"],), 0)
+        staged = safe_scalar("SELECT COUNT(*) FROM assets WHERE album_id = ? AND is_staged=1;", (a["id"],), "n/a")
+        size_bytes = safe_scalar("SELECT SUM(raw_size_bytes) FROM assets WHERE album_id = ?;", (a["id"],), 0)
+
+        pct = f"{(comp / total * 100):.0f}%" if total else "—"
+        size_display = format_bytes(size_bytes) if isinstance(size_bytes, (int, float)) else size_bytes
+
+        t.add_row(
+            str(a["id"]), a["title"], str(total), pct,
+            str(fail) if fail else "0",
+            str(staged), size_display
+        )
+
+    console.print(t)
+
+
+def display_expiring_report(conn: sqlite3.Connection):
+    """
+    Which assets are stale or about to be, right now — independent of
+    whether mint.py's daemon is actually running. Same lookahead window
+    (token_buffer_seconds) get_needs_refresh() uses, so what shows up
+    here is exactly what a mint pass would act on if you ran one.
+    """
+    buffer_row = conn.execute(
+        "SELECT config_value FROM system_config WHERE config_key='token_buffer_seconds';"
+    ).fetchone()
+    lookahead = int(buffer_row["config_value"]) if buffer_row else 600
+    now = int(time.time())
+    cutoff = now + lookahead
+
+    rows = conn.execute("""
+        SELECT assets.id, assets.title, assets.token_expiry_timestamp, albums.title as album_title
+        FROM assets
+        LEFT JOIN albums ON assets.album_id = albums.id
+        WHERE assets.token_expiry_timestamp IS NULL
+           OR assets.token_expiry_timestamp <= ?
+        ORDER BY assets.token_expiry_timestamp ASC NULLS FIRST;
+    """, (cutoff,)).fetchall()
+
+    if not rows:
+        console.print(f"[bold green][+][/bold green] Nothing expiring within the next {lookahead}s. All tokens fresh.")
+        return
+
+    t = Table(title=f"[bold magenta]Expiring/Expired Tokens (within {lookahead}s lookahead)[/bold magenta]", expand=True)
+    t.add_column("Asset ID", justify="right", style="cyan")
+    t.add_column("Album", style="white")
+    t.add_column("Title", style="white")
+    t.add_column("Status", style="yellow")
+
+    expired_count = 0
+    no_token_count = 0
+
+    for r in rows:
+        expiry = r["token_expiry_timestamp"]
+        if expiry is None:
+            status = "[dim white]No token[/dim white]"
+            no_token_count += 1
+        elif expiry <= now:
+            status = "[bold red]Expired[/bold red]"
+            expired_count += 1
+        else:
+            remaining = expiry - now
+            mins = remaining // 60
+            status = f"[yellow]Expiring in {mins}m[/yellow]"
+
+        t.add_row(str(r["id"]), r["album_title"] or "—", r["title"], status)
+
+    console.print(t)
+    console.print(f"[dim]{len(rows)} total — {expired_count} expired, {no_token_count} never minted, "
+                   f"{len(rows) - expired_count - no_token_count} expiring soon.[/dim]")
+
+
+def display_staged_overview(conn: sqlite3.Connection):
+    """
+    Quick glance at everything currently staged — albums and assets both,
+    since staging an album cascades to its assets but staging individual
+    assets doesn't cascade back up to the album. Shows both so nothing
+    staged is invisible just because it was staged at the other level.
+    """
+    def safe_rows(sql: str, fallback_msg: str):
+        try:
+            return conn.execute(sql).fetchall()
+        except sqlite3.OperationalError:
+            console.print(f"[dim]{fallback_msg}[/dim]")
+            return None
+
+    staged_albums = safe_rows(
+        "SELECT id, title, file_count FROM albums WHERE is_staged=1 ORDER BY id ASC;",
+        "albums.is_staged not found — run: python inspect_db.py --add-column albums:is_staged:INTEGER"
+    )
+    staged_assets = safe_rows(
+        """SELECT assets.id, assets.title, assets.download_status, albums.title as album_title
+           FROM assets LEFT JOIN albums ON assets.album_id = albums.id
+           WHERE assets.is_staged=1 ORDER BY assets.album_id ASC, assets.track_number ASC;""",
+        "assets.is_staged not found — run: python inspect_db.py --add-column assets:is_staged:INTEGER"
+    )
+
+    if staged_albums:
+        t = Table(title="[bold magenta]Staged Albums[/bold magenta]", expand=True)
+        t.add_column("ID", justify="right", style="cyan")
+        t.add_column("Title", style="white")
+        t.add_column("Files", justify="right")
+        for a in staged_albums:
+            t.add_row(str(a["id"]), a["title"], str(a["file_count"]))
+        console.print(t)
+    elif staged_albums is not None:
+        console.print("[dim]No staged albums.[/dim]")
+
+    if staged_assets:
+        t = Table(title="[bold magenta]Staged Assets[/bold magenta]", expand=True)
+        t.add_column("ID", justify="right", style="cyan")
+        t.add_column("Album", style="white")
+        t.add_column("Title", style="white")
+        t.add_column("Status", style="yellow")
+        for a in staged_assets:
+            t.add_row(str(a["id"]), a["album_title"] or "—", a["title"], a["download_status"])
+        console.print(t)
+    elif staged_assets is not None:
+        console.print("[dim]No staged assets.[/dim]")
+
+    if staged_albums is not None and staged_assets is not None and not staged_albums and not staged_assets:
+        console.print("[bold yellow][!][/bold yellow] Nothing is currently staged.")
 
 
 def print_schema(conn: sqlite3.Connection, table: str):
@@ -342,6 +521,35 @@ def run_exec_sql(conn: sqlite3.Connection, sql: str, confirm: bool = True):
         console.print(f"[bold red][x] Exec error:[/bold red] {e}")
 
 
+def wipe_album(conn: sqlite3.Connection, album_id: int, confirm: bool = True):
+    """
+    Deletes ONE album and its assets, leaving every other album untouched.
+    No VACUUM here (unlike wipe_data/nuke_db) — VACUUM's cost scales with
+    the whole DB file, not the rows removed, so running it on every
+    single-album wipe would be wasteful if you're doing this repeatedly.
+    Run --exec "VACUUM;" yourself afterward if you want to reclaim space.
+    """
+    row = conn.execute("SELECT title FROM albums WHERE id = ?;", (album_id,)).fetchone()
+    if not row:
+        console.print(f"[bold yellow][!][/bold yellow] No album found with id {album_id} — nothing to wipe.")
+        return
+
+    asset_count = conn.execute("SELECT COUNT(*) as c FROM assets WHERE album_id = ?;", (album_id,)).fetchone()["c"]
+
+    if confirm:
+        console.print(f"[bold red][!] This will DELETE album #{album_id} ('{row['title']}') "
+                       f"and its {asset_count} asset(s). Other albums are untouched.[/bold red]")
+        answer = input("Type 'yes' to continue: ").strip().lower()
+        if answer != "yes":
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+    with conn:
+        conn.execute("DELETE FROM assets WHERE album_id = ?;", (album_id,))
+        conn.execute("DELETE FROM albums WHERE id = ?;", (album_id,))
+    console.print(f"[bold green][+][/bold green] Wiped album #{album_id} ('{row['title']}') and {asset_count} asset(s).")
+
+
 def wipe_data(conn: sqlite3.Connection, confirm: bool = True):
     """
     Soft wipe: clears albums + assets (cascades via FK), keeps system_config
@@ -394,6 +602,12 @@ def main():
                          help=f"Number of sample rows to show (default {DEFAULT_LIMIT})")
     parser.add_argument("--all", action="store_true", help="Show every row, ignore --limit")
     parser.add_argument("--sql", help="Run an arbitrary read query instead of the standard dump")
+    parser.add_argument("--albums", action="store_true",
+                         help="Per-album breakdown: completion %%, staged count, size, per album")
+    parser.add_argument("--expiring", action="store_true",
+                         help="List assets expiring/expired right now, independent of mint.py running")
+    parser.add_argument("--staged", action="store_true",
+                         help="Quick glance at everything currently staged — albums and assets both")
     parser.add_argument("--exec", dest="exec_sql",
                          help="Run an arbitrary WRITE statement (DELETE/UPDATE/VACUUM/etc), with confirmation")
     parser.add_argument("--add-column", dest="add_column",
@@ -410,6 +624,8 @@ def main():
                          help="Set is_staged=0 for assets: id, comma list, range, or 'all' — e.g. 14,15,22 or 1-10 or all")
     parser.add_argument("--wipe", action="store_true",
                          help="Clear albums + assets, keep system_config, reclaim disk space ('start fresh')")
+    parser.add_argument("--wipe-album", type=int, metavar="ID",
+                         help="Delete ONE album and its assets, leaving other albums untouched")
     parser.add_argument("--nuke", "--purge", dest="nuke", action="store_true",
                          help="Drop ALL tables including system_config (true factory reset; auto-rebuilds on next use)")
     parser.add_argument("-y", "--yes", action="store_true",
@@ -425,6 +641,10 @@ def main():
 
         if args.wipe:
             wipe_data(conn, confirm=not args.yes)
+            return
+
+        if args.wipe_album is not None:
+            wipe_album(conn, args.wipe_album, confirm=not args.yes)
             return
 
         if args.exec_sql:
@@ -483,6 +703,18 @@ def main():
 
         if args.sql:
             run_raw_sql(conn, args.sql)
+            return
+
+        if args.albums:
+            display_albums_breakdown(conn)
+            return
+
+        if args.expiring:
+            display_expiring_report(conn)
+            return
+
+        if args.staged:
+            display_staged_overview(conn)
             return
 
         # Overview dashboard when run with truly zero args. The len(sys.argv)

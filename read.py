@@ -374,6 +374,7 @@ if __name__ == "__main__":
 
                     console.print()
                     console.print(" [bold white]s.[/bold white] Search for or discover a new album")
+                    console.print(" [bold white]d.[/bold white] Delete an album")
                     console.print(" [bold white]q.[/bold white] Exit reader")
                     console.print()
 
@@ -385,6 +386,25 @@ if __name__ == "__main__":
                         new_id = launch_scraper_and_get_new_album()
                         if new_id:
                             render_db_dashboard(new_id)
+                        continue
+
+                    if target_input.lower() in ('d', 'delete'):
+                        del_input = Prompt.ask("[bold cyan][?][/bold cyan] Record number to delete (or Enter to cancel)").strip()
+                        if not del_input:
+                            continue
+                        try:
+                            del_idx = int(del_input) - 1
+                            if 0 <= del_idx < len(albums):
+                                target_id = albums[del_idx]["id"]
+                                # inspect_db.py owns the actual delete + confirmation
+                                # prompt (--wipe-album). Sharing stdio here means its
+                                # input("Type 'yes'...") works interactively, same
+                                # as running inspect_db.py directly.
+                                subprocess.run([sys.executable, "inspect_db.py", "--wipe-album", str(target_id)])
+                            else:
+                                console.print("[bold red][-][/bold red] Invalid record index selection.")
+                        except ValueError:
+                            console.print("[bold red][-][/bold red] Enter a valid record number.")
                         continue
 
                     target_input = clean_dragged_path(target_input)

@@ -5,6 +5,7 @@ import subprocess
 import shutil
 import sys
 import os
+import re
 import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,7 +27,7 @@ from core import DatabaseManager
 from utils import format_bytes, clean_dragged_path
 
 # Paths config
-DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "bunkr_downloads"
+DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "factory_downloads"
 
 console = Console()
 db = DatabaseManager()
@@ -213,6 +214,18 @@ def sanitize_filename(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c in "._- ()").strip()
 
 
+def get_album_folder_name(album_id, album_title: str) -> str:
+    """
+    Builds the '#{id}_{title}' subfolder name each album's files land in,
+    e.g. '#11_Some_Album_Title'. album_id can be an int (normal DB-backed
+    downloads) or a string fallback (legacy JSON path with no DB row) —
+    str() handles both uniformly.
+    """
+    clean = re.sub(r'[\\/*?:"<>|]', "", album_title or "unknown_album")
+    clean = re.sub(r'\s+', "_", clean).strip("_") or "unknown_album"
+    return f"#{album_id}_{clean}"
+
+
 def execute_ytdlp_task(index: int, total_files: int, asset_data: dict, slot_id: int,
                         task_id, progress: Progress):
     """Assembles and executes the yt-dlp subprocess payload with real-time feedback loop."""
@@ -229,7 +242,13 @@ def execute_ytdlp_task(index: int, total_files: int, asset_data: dict, slot_id: 
         cdn_url = asset_data.get("signed_cdn_url")
 
     safe_name = sanitize_filename(title)
-    dest = DEFAULT_OUTPUT_DIR / safe_name
+    album_folder = get_album_folder_name(
+        asset_data.get("album_id", "unsorted"),
+        asset_data.get("album_title", "unsorted")
+    )
+    album_dir = DEFAULT_OUTPUT_DIR / album_folder
+    album_dir.mkdir(parents=True, exist_ok=True)
+    dest = album_dir / safe_name
 
     def set_idle():
         progress.update(task_id, description=f"[Worker {slot_id + 1}] Idle...", completed=0, total=None)
@@ -254,8 +273,8 @@ def execute_ytdlp_task(index: int, total_files: int, asset_data: dict, slot_id: 
         "--socket-timeout", "25",
         "--continue",
         "--newline",
-        "--referer", "https://bunkr.cr/",
-        "--add-header", "Origin:https://bunkr.cr",
+        "--referer", "https://factory.cr/",
+        "--add-header", "Origin:https://factory.cr",
         "--add-header", (
             "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -458,7 +477,7 @@ def download_assets():
         try:
             with db.connection() as conn:
                 assets = conn.execute("""
-                    SELECT a.* FROM assets a
+                    SELECT a.*, al.title AS album_title FROM assets a
                     LEFT JOIN albums al ON a.album_id = al.id
                     WHERE a.is_staged = 1 OR al.is_staged = 1
                     ORDER BY a.album_id, a.track_number ASC;
@@ -466,6 +485,8 @@ def download_assets():
                 for asset in assets:
                     files_list.append({
                         "db_asset_id": asset["id"],
+                        "album_id": asset["album_id"],
+                        "album_title": asset["album_title"],
                         "title": asset["title"],
                         "original": asset["original_filename"],
                         "signed_cdn_url": asset["signed_cdn_url"],
@@ -479,10 +500,17 @@ def download_assets():
         console.print("[bold red][*] Auto-Triage: Aggregating all broken or FAILED download tracks...[/bold red]")
         try:
             with db.connection() as conn:
-                assets = conn.execute("SELECT * FROM assets WHERE download_status = 'FAILED' ORDER BY album_id, track_number ASC;").fetchall()
+                assets = conn.execute("""
+                    SELECT a.*, al.title AS album_title FROM assets a
+                    LEFT JOIN albums al ON a.album_id = al.id
+                    WHERE a.download_status = 'FAILED'
+                    ORDER BY a.album_id, a.track_number ASC;
+                """).fetchall()
                 for asset in assets:
                     files_list.append({
                         "db_asset_id": asset["id"],
+                        "album_id": asset["album_id"],
+                        "album_title": asset["album_title"],
                         "title": asset["title"],
                         "original": asset["original_filename"],
                         "signed_cdn_url": asset["signed_cdn_url"],
@@ -505,6 +533,8 @@ def download_assets():
                 for asset in assets:
                     files_list.append({
                         "db_asset_id": asset["id"],
+                        "album_id": album["id"],
+                        "album_title": album["title"],
                         "title": asset["title"],
                         "original": asset["original_filename"],
                         "signed_cdn_url": asset["signed_cdn_url"],
@@ -518,6 +548,15 @@ def download_assets():
         with open(input_json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         files_list = data.get("files_found", [])
+
+        # No DB row backs this path, so there's no real album id — fall back
+        # to whatever numeric label the scrape JSON itself carried.
+        album_meta = data.get("selected_album", {})
+        legacy_album_id = album_meta.get("album_index_number", "legacy")
+        legacy_album_title = album_meta.get("title", "unknown_album")
+        for item in files_list:
+            item.setdefault("album_id", legacy_album_id)
+            item.setdefault("album_title", legacy_album_title)
 
     if not files_list:
         console.print("[yellow][!] No targets available to download.[/yellow]")
