@@ -1,40 +1,40 @@
-# inspect_db.py
+# inspector.py
 """
 Quick CLI to poke at media_tracker.db without writing one-off queries.
 
 Usage:
-    python inspect_db.py                     # zero args: dashboard overview (see below)
-    python inspect_db.py --table assets       # just one table
-    python inspect_db.py --table assets -n 20 # show 20 sample rows instead of the default 5
-    python inspect_db.py --table assets --all # dump every row (careful on big tables)
-    python inspect_db.py --sql "SELECT * FROM assets WHERE download_status='FAILED'"
+    python inspector.py                     # zero args: dashboard overview (see below)
+    python inspector.py --table assets       # just one table
+    python inspector.py --table assets -n 20 # show 20 sample rows instead of the default 5
+    python inspector.py --table assets --all # dump every row (careful on big tables)
+    python inspector.py --sql "SELECT * FROM assets WHERE download_status='FAILED'"
 
     # Per-album breakdown: files, completion %, failed count, staged count,
     # and total size — one row per album. Complements the global dashboard,
     # which totals across the whole DB rather than showing per-album detail.
-    python inspect_db.py --albums
+    python inspector.py --albums
 
     # Which assets are stale or about to be, right now — same lookahead
     # window (token_buffer_seconds) get_needs_refresh() uses, so this shows
     # exactly what a mint pass would act on. Useful precisely BECAUSE it
     # doesn't depend on mint.py's daemon actually being run.
-    python inspect_db.py --expiring
+    python inspector.py --expiring
 
     # Quick glance at everything staged right now — albums and assets
     # both, since album-level and asset-level staging don't cascade
     # back up to each other (staging an asset directly doesn't mark
     # its album staged, and vice versa doesn't show here as a diff view).
-    python inspect_db.py --staged
+    python inspector.py --staged
 
     # Dashboard (zero args only — any flag at all skips it in favor of the
     # standard table dump). Shows row counts + pipeline metrics per table.
     # The "Staged" metrics need an is_staged column that doesn't ship with
     # the base schema; run these once before relying on that number:
-    #   python inspect_db.py --add-column assets:is_staged:INTEGER
-    #   python inspect_db.py --add-column albums:is_staged:INTEGER
+    #   python inspector.py --add-column assets:is_staged:INTEGER
+    #   python inspector.py --add-column albums:is_staged:INTEGER
     # Without it, the dashboard still renders — Staged just shows "n/a"
     # instead of erroring or blanking out the other metrics on that row.
-    python inspect_db.py
+    python inspector.py
 
     # Toggle staging (requires the is_staged migrations above to have run).
     # SELECTION accepts a single id, comma list, range, or 'all' — same
@@ -44,31 +44,31 @@ Usage:
     # every asset that belongs to it (both UPDATEs run in one transaction).
     # --stage-assets / --unstage-assets operate on assets directly, with no
     # album scoping — 'all' means every asset in the whole DB, not one album.
-    python inspect_db.py --stage-album 2          # stages album 2 + all its assets
-    python inspect_db.py --unstage-album 2
-    python inspect_db.py --stage-assets 14,15,22
-    python inspect_db.py --stage-assets 1-10
-    python inspect_db.py --unstage-assets all      # clears staging on every asset, globally
+    python inspector.py --stage-album 2          # stages album 2 + all its assets
+    python inspector.py --unstage-album 2
+    python inspector.py --stage-assets 14,15,22
+    python inspector.py --stage-assets 1-10
+    python inspector.py --unstage-assets all      # clears staging on every asset, globally
 
     # Write operations (DELETE/UPDATE/VACUUM/etc) — these commit for real,
     # unlike --sql above which is read-only (.fetchall(), never commits).
-    python inspect_db.py --exec "DELETE FROM assets WHERE download_status='FAILED';"
-    python inspect_db.py --exec "UPDATE assets SET token_expiry_timestamp = NULL;"
+    python inspector.py --exec "DELETE FROM assets WHERE download_status='FAILED';"
+    python inspector.py --exec "UPDATE assets SET token_expiry_timestamp = NULL;"
 
     # Schema migrations: add a column to an existing table. Replaces the old
     # standalone upgrade_db.py — safe to re-run, skips if column exists.
-    python inspect_db.py --add-column assets:true_file_id:INTEGER
+    python inspector.py --add-column assets:true_file_id:INTEGER
 
     # Opposite: drop a column. Requires SQLite 3.35+ (bundled with Python
     # 3.9+). Destructive — confirms by default, -y skips the prompt.
-    python inspect_db.py --drop-column assets:true_file_id
+    python inspector.py --drop-column assets:true_file_id
 
     # "Start fresh": clears albums + assets (cascades via FK), keeps
     # system_config (poll intervals, max_workers, etc) intact, then VACUUMs
     # to reclaim disk space. Schema itself is untouched — DatabaseManager's
     # _init_db() would just recreate it anyway (CREATE TABLE IF NOT EXISTS),
     # so there's nothing to "rebuild" here, only data to clear.
-    python inspect_db.py --wipe
+    python inspector.py --wipe
 
     # Scoped version: delete one or more albums + their assets, leave
     # everything else alone. Accepts a single id, comma list, or range —
@@ -76,20 +76,20 @@ Usage:
     # No auto-VACUUM (unlike --wipe/--nuke) since that cost scales with the
     # whole DB, not the rows removed — run --exec "VACUUM;" yourself
     # afterward if you want to reclaim space.
-    python inspect_db.py --wipe-album 7
-    python inspect_db.py --wipe-album 12,13,14
-    python inspect_db.py --wipe-album 7-9
+    python inspector.py --wipe-album 7
+    python inspector.py --wipe-album 12,13,14
+    python inspector.py --wipe-album 7-9
 
     # True factory reset: drops every table, INCLUDING system_config, so
     # tuned settings revert to defaults too. Nothing to run afterward —
     # the next DatabaseManager() (e.g. next time you scrape a new album)
     # calls _init_db() in __init__ and rebuilds schema + seeded config
     # automatically. Confirmation requires typing 'nuke', not 'yes'.
-    python inspect_db.py --nuke
+    python inspector.py --nuke
 
     # -y skips the confirmation prompt on --exec / --wipe / --nuke, for
     # scripted/non-interactive use (e.g. wiring a "reset" button to this later).
-    python inspect_db.py --wipe -y
+    python inspector.py --wipe -y
 """
 import argparse
 import sqlite3
@@ -110,6 +110,10 @@ console = Console()
 DEFAULT_LIMIT = 5
 
 
+# ============================================================
+# Table introspection helpers
+# ============================================================
+
 def get_table_names(conn: sqlite3.Connection) -> list[str]:
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;"
@@ -125,10 +129,14 @@ def get_columns(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
     return conn.execute(f"PRAGMA table_info({table});").fetchall()
 
 
+# ============================================================
+# Read-only reports (dashboard, per-album, expiring, staged)
+# ============================================================
+
 def display_global_dashboard(conn: sqlite3.Connection):
     """
     Scannable overview: every table, row count, and per-table pipeline
-    metrics. Triggers automatically when inspect_db.py is run with zero
+    metrics. Triggers automatically when inspector.py is run with zero
     args — see main() below.
 
     Each metric is queried in its OWN try/except so a single missing
@@ -297,7 +305,7 @@ def display_staged_overview(conn: sqlite3.Connection):
 
     staged_albums = safe_rows(
         "SELECT id, title, file_count FROM albums WHERE is_staged=1 ORDER BY id ASC;",
-        "albums.is_staged not found — run: python inspect_db.py --add-column albums:is_staged:INTEGER"
+        "albums.is_staged not found — run: python inspector.py --add-column albums:is_staged:INTEGER"
     )
     staged_by_album = safe_rows(
         """SELECT a.album_id, al.title AS album_title,
@@ -311,7 +319,7 @@ def display_staged_overview(conn: sqlite3.Connection):
            WHERE a.is_staged = 1
            GROUP BY a.album_id
            ORDER BY al.title ASC;""",
-        "assets.is_staged not found — run: python inspect_db.py --add-column assets:is_staged:INTEGER"
+        "assets.is_staged not found — run: python inspector.py --add-column assets:is_staged:INTEGER"
     )
 
     if staged_albums:
@@ -364,6 +372,10 @@ def display_staged_overview(conn: sqlite3.Connection):
         console.print("[bold yellow][!][/bold yellow] Nothing is currently staged.")
 
 
+# ============================================================
+# Generic table dump + raw SQL (--table, --sql)
+# ============================================================
+
 def print_schema(conn: sqlite3.Connection, table: str):
     cols = get_columns(conn, table)
     t = Table(title=f"schema: {table}", show_lines=False)
@@ -414,6 +426,10 @@ def run_raw_sql(conn: sqlite3.Connection, sql: str):
         pprint(dict(row))
 
 
+# ============================================================
+# Schema migrations (--add-column, --drop-column)
+# ============================================================
+
 def add_column(conn: sqlite3.Connection, table: str, column: str, col_type: str):
     """
     Adds a column to an existing table. Mirrors the old standalone
@@ -455,6 +471,10 @@ def drop_column(conn: sqlite3.Connection, table: str, column: str, confirm: bool
         console.print("[dim]Common causes: column doesn't exist, is part of a PRIMARY KEY/UNIQUE index, "
                        "or your SQLite build predates 3.35 (DROP COLUMN support).[/dim]")
 
+
+# ============================================================
+# Selection parsing + staging (--stage-*, --unstage-*)
+# ============================================================
 
 def parse_id_selection(conn: sqlite3.Connection, table: str, selection: str) -> list[int]:
     """
@@ -510,7 +530,7 @@ def set_staged(conn: sqlite3.Connection, table: str, ids: list[int], staged: boo
     except sqlite3.OperationalError as e:
         console.print(f"[bold red][x] Failed:[/bold red] {e}")
         console.print(f"[dim]Has is_staged been added to '{table}' yet? "
-                       f"python inspect_db.py --add-column {table}:is_staged:INTEGER[/dim]")
+                       f"python inspector.py --add-column {table}:is_staged:INTEGER[/dim]")
 
 
 def stage_album_cascade(conn: sqlite3.Connection, album_id: int, staged: bool):
@@ -537,9 +557,13 @@ def stage_album_cascade(conn: sqlite3.Connection, album_id: int, staged: bool):
     except sqlite3.OperationalError as e:
         console.print(f"[bold red][x] Failed:[/bold red] {e}")
         console.print("[dim]Has is_staged been added to both 'albums' and 'assets' yet? "
-                       "python inspect_db.py --add-column albums:is_staged:INTEGER  |  "
-                       "python inspect_db.py --add-column assets:is_staged:INTEGER[/dim]")
+                       "python inspector.py --add-column albums:is_staged:INTEGER  |  "
+                       "python inspector.py --add-column assets:is_staged:INTEGER[/dim]")
 
+
+# ============================================================
+# Write / destructive operations (--exec, --wipe*, --nuke)
+# ============================================================
 
 def run_exec_sql(conn: sqlite3.Connection, sql: str, confirm: bool = True):
     """
@@ -653,42 +677,55 @@ def nuke_db(conn: sqlite3.Connection, confirm: bool = True):
     console.print("[dim]Schema + default config will auto-rebuild next time anything opens this DB (e.g. next scrape).[/dim]")
 
 
+# ============================================================
+# CLI entry point
+# ============================================================
+
 def main():
-    parser = argparse.ArgumentParser(description="Inspect media_tracker.db")
-    parser.add_argument("--table", help="Only inspect this table")
-    parser.add_argument("-n", "--limit", type=int, default=DEFAULT_LIMIT,
-                         help=f"Number of sample rows to show (default {DEFAULT_LIMIT})")
-    parser.add_argument("--all", action="store_true", help="Show every row, ignore --limit")
-    parser.add_argument("--sql", help="Run an arbitrary read query instead of the standard dump")
-    parser.add_argument("--albums", action="store_true",
-                         help="Per-album breakdown: completion %%, staged count, size, per album")
-    parser.add_argument("--expiring", action="store_true",
-                         help="List assets expiring/expired right now, independent of mint.py running")
-    parser.add_argument("--staged", action="store_true",
-                         help="Quick glance at everything currently staged — albums and assets both")
-    parser.add_argument("--exec", dest="exec_sql",
-                         help="Run an arbitrary WRITE statement (DELETE/UPDATE/VACUUM/etc), with confirmation")
-    parser.add_argument("--add-column", dest="add_column",
-                         help="Add a column: table:column:type, e.g. assets:true_file_id:INTEGER")
-    parser.add_argument("--drop-column", dest="drop_column",
-                         help="Drop a column: table:column, e.g. assets:true_file_id")
-    parser.add_argument("--stage-album", type=int, metavar="ID",
-                         help="Set is_staged=1 for an album AND cascade to all its assets")
-    parser.add_argument("--unstage-album", type=int, metavar="ID",
-                         help="Set is_staged=0 for an album AND cascade to all its assets")
-    parser.add_argument("--stage-assets", metavar="SELECTION",
-                         help="Set is_staged=1 for assets: id, comma list, range, or 'all' — e.g. 14,15,22 or 1-10 or all")
-    parser.add_argument("--unstage-assets", metavar="SELECTION",
-                         help="Set is_staged=0 for assets: id, comma list, range, or 'all' — e.g. 14,15,22 or 1-10 or all")
-    parser.add_argument("--wipe", action="store_true",
-                         help="Clear albums + assets, keep system_config, reclaim disk space ('start fresh')")
-    parser.add_argument("--wipe-album", metavar="SELECTION",
-                         help="Delete one or more albums + their assets: id, comma list, or range — e.g. 12,13,14 or 7-9. "
-                              "Use --wipe (not 'all' here) to clear every album.")
-    parser.add_argument("--nuke", "--purge", dest="nuke", action="store_true",
-                         help="Drop ALL tables including system_config (true factory reset; auto-rebuilds on next use)")
-    parser.add_argument("-y", "--yes", action="store_true",
-                         help="Skip the confirmation prompt for --exec / --wipe / --nuke (for scripting)")
+    parser = argparse.ArgumentParser(description="Inspect and manage media_tracker.db")
+
+    view = parser.add_argument_group("Views (read-only)")
+    view.add_argument("--table", help="Only inspect this table")
+    view.add_argument("-n", "--limit", type=int, default=DEFAULT_LIMIT,
+                       help=f"Number of sample rows to show (default {DEFAULT_LIMIT})")
+    view.add_argument("--all", action="store_true", help="Show every row, ignore --limit")
+    view.add_argument("--sql", help="Run an arbitrary read query instead of the standard dump")
+    view.add_argument("--albums", action="store_true",
+                       help="Per-album breakdown: completion %%, staged count, size, per album")
+    view.add_argument("--expiring", action="store_true",
+                       help="List assets expiring/expired right now, independent of mint.py running")
+    view.add_argument("--staged", action="store_true",
+                       help="High-level staging summary, grouped by album")
+
+    migrate = parser.add_argument_group("Schema migrations")
+    migrate.add_argument("--add-column", dest="add_column",
+                          help="Add a column: table:column:type, e.g. assets:true_file_id:INTEGER")
+    migrate.add_argument("--drop-column", dest="drop_column",
+                          help="Drop a column: table:column, e.g. assets:true_file_id")
+
+    stage = parser.add_argument_group("Staging (--stage-*, cascading for albums)")
+    stage.add_argument("--stage-album", type=int, metavar="ID",
+                        help="Set is_staged=1 for an album AND cascade to all its assets")
+    stage.add_argument("--unstage-album", type=int, metavar="ID",
+                        help="Set is_staged=0 for an album AND cascade to all its assets")
+    stage.add_argument("--stage-assets", metavar="SELECTION",
+                        help="Set is_staged=1 for assets: id, comma list, range, or 'all' — e.g. 14,15,22 or 1-10 or all")
+    stage.add_argument("--unstage-assets", metavar="SELECTION",
+                        help="Set is_staged=0 for assets: id, comma list, range, or 'all' — e.g. 14,15,22 or 1-10 or all")
+
+    write = parser.add_argument_group("Write / destructive operations")
+    write.add_argument("--exec", dest="exec_sql",
+                        help="Run an arbitrary WRITE statement (DELETE/UPDATE/VACUUM/etc), with confirmation")
+    write.add_argument("--wipe", action="store_true",
+                        help="Clear albums + assets, keep system_config, reclaim disk space ('start fresh')")
+    write.add_argument("--wipe-album", metavar="SELECTION",
+                        help="Delete one or more albums + their assets: id, comma list, or range — e.g. 12,13,14 or 7-9. "
+                             "Use --wipe (not 'all' here) to clear every album.")
+    write.add_argument("--nuke", "--purge", dest="nuke", action="store_true",
+                        help="Drop ALL tables including system_config (true factory reset; auto-rebuilds on next use)")
+    write.add_argument("-y", "--yes", action="store_true",
+                        help="Skip the confirmation prompt for --exec / --wipe / --nuke (for scripting)")
+
     args = parser.parse_args()
 
     db = DatabaseManager()  # reuses the same db_path/schema as the rest of the app

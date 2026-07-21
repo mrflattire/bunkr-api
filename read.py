@@ -90,7 +90,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
         
     console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 1,3,5 | 1-5 | staged | Enter for ALL)[/dim]")
     console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
-    console.print(" [bold white]3.[/bold white] Download all assets in this album")
+    console.print(" [bold white]3.[/bold white] Download all assets in this album [green]download.py[/green]")
     console.print(" [bold white]4.[/bold white] Copy link to stdout")
     console.print(f" [bold white]5.[/bold white] {minter_style}")
     console.print(" [bold white]6.[/bold white] Stage/Unstage assets [dim](Accepts: 1-10 or 1,2,5 or all)[/dim]")
@@ -162,19 +162,19 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
         subprocess.run([sys.executable, "mint.py", "--album-id", str(album_id)])
         return "5"
 
-    # Action 6: Stage / Unstage using inspect_db.py
+    # Action 6: Stage / Unstage using inspector.py
     elif action == "6":
         sub_choice = Prompt.ask("[bold cyan][?][/bold cyan] 1: Stage Album | 2: Unstage Album | 3: Stage Assets | 4: Unstage Assets", choices=["1", "2", "3", "4"], default="1")
 
-        if sub_choice == "1": subprocess.run([sys.executable, "inspect_db.py", "--stage-album", str(album_id)])
-        elif sub_choice == "2": subprocess.run([sys.executable, "inspect_db.py", "--unstage-album", str(album_id)])
+        if sub_choice == "1": subprocess.run([sys.executable, "inspector.py", "--stage-album", str(album_id)])
+        elif sub_choice == "2": subprocess.run([sys.executable, "inspector.py", "--unstage-album", str(album_id)])
         elif sub_choice in ("3", "4"):
             spec = Prompt.ask("[bold cyan][?][/bold cyan] Enter indices/ranges (or 'all')").strip()
             if spec:
                 flag = "--stage-assets" if sub_choice == "3" else "--unstage-assets"
                 
                 if spec.lower() == "all":
-                    subprocess.run([sys.executable, "inspect_db.py", flag, "all"])
+                    subprocess.run([sys.executable, "inspector.py", flag, "all"])
                 else:
                     try:
                         target_indices = parse_selection(spec, total_items)
@@ -183,7 +183,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
                         
                         asset_ids = [str(dict(a)["id"]) for i, a in enumerate(all_db_assets, start=1) if i in target_indices]
                         if asset_ids:
-                            subprocess.run([sys.executable, "inspect_db.py", flag, ",".join(asset_ids)])
+                            subprocess.run([sys.executable, "inspector.py", flag, ",".join(asset_ids)])
                     except ValueError as e: console.print(f"[bold red][-][/bold red] Error: {e}")
         time.sleep(1)
         return "6"
@@ -389,13 +389,13 @@ if __name__ == "__main__":
                         continue
 
                     if target_input.lower() in ('d', 'delete'):
-                        del_input = Prompt.ask("[bold cyan][?][/bold cyan] Album/s number(s) to delete — single, comma list, or range (or Enter to cancel)").strip()
+                        del_input = Prompt.ask("[bold cyan][?][/bold cyan] Album number(s) to delete — single, comma list, or range (or Enter to cancel)").strip()
                         if not del_input:
                             continue
 
                         # Parse the SAME display-position syntax shown in the
                         # numbered list above (1-based), then map each position
-                        # to its real DB id — inspect_db.py's --wipe-album needs
+                        # to its real DB id — inspector.py's --wipe-album needs
                         # actual ids, not the display numbers shown on screen.
                         try:
                             display_positions = []
@@ -431,12 +431,12 @@ if __name__ == "__main__":
                             console.print("[bold yellow][!][/bold yellow] No valid album numbers to delete.")
                             continue
 
-                        # inspect_db.py owns the actual delete + confirmation
+                        # inspector.py owns the actual delete + confirmation
                         # prompt (--wipe-album accepts a comma list too now).
                         # Sharing stdio here means its input("Type 'yes'...")
                         # works interactively, same as running it directly.
                         selection_arg = ",".join(str(i) for i in target_ids)
-                        subprocess.run([sys.executable, "inspect_db.py", "--wipe-album", selection_arg])
+                        subprocess.run([sys.executable, "inspector.py", "--wipe-album", selection_arg])
                         continue
 
                     target_input = clean_dragged_path(target_input)
