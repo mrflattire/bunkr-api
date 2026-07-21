@@ -13,6 +13,7 @@ CDN_NODES = [
     "c4s5-b.cdn.cr",
     "c2ck-b.cdn.cr",
     "c3vi1-b.cdn.cr",
+    "c1be-b.cdn.cr",
     "prxp-b.cdn.cr"
 ]
 

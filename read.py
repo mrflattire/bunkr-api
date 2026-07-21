@@ -90,11 +90,11 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
         
     console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 1,3,5 | 1-5 | staged | Enter for ALL)[/dim]")
     console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
-    console.print(" [bold white]3.[/bold white] Forward all asset keys to [green]download.py[/green]")
+    console.print(" [bold white]3.[/bold white] Download all assets in this album")
     console.print(" [bold white]4.[/bold white] Copy link to stdout")
     console.print(f" [bold white]5.[/bold white] {minter_style}")
     console.print(" [bold white]6.[/bold white] Stage/Unstage assets [dim](Accepts: 1-10 or 1,2,5 or all)[/dim]")
-    console.print(" [bold white]q.[/bold white] Exit reader")
+    console.print(" [bold white]q.[/bold white] Exit this stage")
     
     choices = ["1", "2", "3", "4", "5", "6", "q"]
     if current_page < total_pages: choices.append("n")
@@ -378,7 +378,7 @@ if __name__ == "__main__":
                     console.print(" [bold white]q.[/bold white] Exit reader")
                     console.print()
 
-                    target_input = Prompt.ask("[bold cyan][?][/bold cyan] Choose a record number, drop a fresh JSON path, or select an option").strip()
+                    target_input = Prompt.ask("[bold cyan][?][/bold cyan] Choose an album, drop a fresh JSON path, or select an option").strip()
                     if target_input.lower() in ('q', 'quit', 'exit'):
                         break
 
@@ -389,22 +389,54 @@ if __name__ == "__main__":
                         continue
 
                     if target_input.lower() in ('d', 'delete'):
-                        del_input = Prompt.ask("[bold cyan][?][/bold cyan] Record number to delete (or Enter to cancel)").strip()
+                        del_input = Prompt.ask("[bold cyan][?][/bold cyan] Album/s number(s) to delete — single, comma list, or range (or Enter to cancel)").strip()
                         if not del_input:
                             continue
+
+                        # Parse the SAME display-position syntax shown in the
+                        # numbered list above (1-based), then map each position
+                        # to its real DB id — inspect_db.py's --wipe-album needs
+                        # actual ids, not the display numbers shown on screen.
                         try:
-                            del_idx = int(del_input) - 1
-                            if 0 <= del_idx < len(albums):
-                                target_id = albums[del_idx]["id"]
-                                # inspect_db.py owns the actual delete + confirmation
-                                # prompt (--wipe-album). Sharing stdio here means its
-                                # input("Type 'yes'...") works interactively, same
-                                # as running inspect_db.py directly.
-                                subprocess.run([sys.executable, "inspect_db.py", "--wipe-album", str(target_id)])
-                            else:
-                                console.print("[bold red][-][/bold red] Invalid record index selection.")
+                            display_positions = []
+                            for part in del_input.split(","):
+                                part = part.strip()
+                                if not part:
+                                    continue
+                                if "-" in part:
+                                    start_s, _, end_s = part.partition("-")
+                                    start, end = int(start_s.strip()), int(end_s.strip())
+                                    if start > end:
+                                        start, end = end, start
+                                    display_positions.extend(range(start, end + 1))
+                                else:
+                                    display_positions.append(int(part))
                         except ValueError:
-                            console.print("[bold red][-][/bold red] Enter a valid record number.")
+                            console.print("[bold red][-][/bold red] Enter valid album number(s), e.g. 3 or 1,3,5 or 2-4.")
+                            continue
+
+                        target_ids = []
+                        bad_positions = []
+                        for pos in display_positions:
+                            idx = pos - 1
+                            if 0 <= idx < len(albums):
+                                target_ids.append(albums[idx]["id"])
+                            else:
+                                bad_positions.append(pos)
+
+                        if bad_positions:
+                            console.print(f"[bold red][-][/bold red] Invalid album number(s), ignored: {', '.join(str(p) for p in bad_positions)}")
+
+                        if not target_ids:
+                            console.print("[bold yellow][!][/bold yellow] No valid album numbers to delete.")
+                            continue
+
+                        # inspect_db.py owns the actual delete + confirmation
+                        # prompt (--wipe-album accepts a comma list too now).
+                        # Sharing stdio here means its input("Type 'yes'...")
+                        # works interactively, same as running it directly.
+                        selection_arg = ",".join(str(i) for i in target_ids)
+                        subprocess.run([sys.executable, "inspect_db.py", "--wipe-album", selection_arg])
                         continue
 
                     target_input = clean_dragged_path(target_input)

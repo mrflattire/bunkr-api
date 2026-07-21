@@ -70,11 +70,15 @@ Usage:
     # so there's nothing to "rebuild" here, only data to clear.
     python inspect_db.py --wipe
 
-    # Scoped version: delete ONE album + its assets, leave everything else
-    # alone. No auto-VACUUM (unlike --wipe/--nuke) since that cost scales
-    # with the whole DB, not the rows removed — run --exec "VACUUM;"
-    # yourself afterward if you want to reclaim space.
+    # Scoped version: delete one or more albums + their assets, leave
+    # everything else alone. Accepts a single id, comma list, or range —
+    # 'all' is intentionally NOT supported here, use --wipe for that.
+    # No auto-VACUUM (unlike --wipe/--nuke) since that cost scales with the
+    # whole DB, not the rows removed — run --exec "VACUUM;" yourself
+    # afterward if you want to reclaim space.
     python inspect_db.py --wipe-album 7
+    python inspect_db.py --wipe-album 12,13,14
+    python inspect_db.py --wipe-album 7-9
 
     # True factory reset: drops every table, INCLUDING system_config, so
     # tuned settings revert to defaults too. Nothing to run afterward —
@@ -279,10 +283,10 @@ def display_expiring_report(conn: sqlite3.Connection):
 
 def display_staged_overview(conn: sqlite3.Connection):
     """
-    Quick glance at everything currently staged — albums and assets both,
-    since staging an album cascades to its assets but staging individual
-    assets doesn't cascade back up to the album. Shows both so nothing
-    staged is invisible just because it was staged at the other level.
+    High-level glance at staging state — grouped by album, not a per-row
+    dump. A dump of every staged asset individually stops being useful
+    once you have more than a handful staged at once; what's actually
+    actionable is "how much is staged, where, and what state is it in."
     """
     def safe_rows(sql: str, fallback_msg: str):
         try:
@@ -295,15 +299,23 @@ def display_staged_overview(conn: sqlite3.Connection):
         "SELECT id, title, file_count FROM albums WHERE is_staged=1 ORDER BY id ASC;",
         "albums.is_staged not found — run: python inspect_db.py --add-column albums:is_staged:INTEGER"
     )
-    staged_assets = safe_rows(
-        """SELECT assets.id, assets.title, assets.download_status, albums.title as album_title
-           FROM assets LEFT JOIN albums ON assets.album_id = albums.id
-           WHERE assets.is_staged=1 ORDER BY assets.album_id ASC, assets.track_number ASC;""",
+    staged_by_album = safe_rows(
+        """SELECT a.album_id, al.title AS album_title,
+                  COUNT(*) AS staged_count,
+                  SUM(CASE WHEN a.download_status='COMPLETED' THEN 1 ELSE 0 END) AS comp,
+                  SUM(CASE WHEN a.download_status='FAILED' THEN 1 ELSE 0 END) AS fail,
+                  SUM(CASE WHEN a.download_status='PENDING' THEN 1 ELSE 0 END) AS pend,
+                  SUM(a.raw_size_bytes) AS total_size
+           FROM assets a
+           LEFT JOIN albums al ON a.album_id = al.id
+           WHERE a.is_staged = 1
+           GROUP BY a.album_id
+           ORDER BY al.title ASC;""",
         "assets.is_staged not found — run: python inspect_db.py --add-column assets:is_staged:INTEGER"
     )
 
     if staged_albums:
-        t = Table(title="[bold magenta]Staged Albums[/bold magenta]", expand=True)
+        t = Table(title="[bold magenta]Staged Albums (album-level flag)[/bold magenta]", expand=True)
         t.add_column("ID", justify="right", style="cyan")
         t.add_column("Title", style="white")
         t.add_column("Files", justify="right")
@@ -311,21 +323,44 @@ def display_staged_overview(conn: sqlite3.Connection):
             t.add_row(str(a["id"]), a["title"], str(a["file_count"]))
         console.print(t)
     elif staged_albums is not None:
-        console.print("[dim]No staged albums.[/dim]")
+        console.print("[dim]No albums flagged staged at the album level.[/dim]")
 
-    if staged_assets:
-        t = Table(title="[bold magenta]Staged Assets[/bold magenta]", expand=True)
-        t.add_column("ID", justify="right", style="cyan")
+    if staged_by_album:
+        t = Table(title="[bold magenta]Staged Assets by Album[/bold magenta]", expand=True)
         t.add_column("Album", style="white")
-        t.add_column("Title", style="white")
-        t.add_column("Status", style="yellow")
-        for a in staged_assets:
-            t.add_row(str(a["id"]), a["album_title"] or "—", a["title"], a["download_status"])
+        t.add_column("Staged Files", justify="right", style="cyan")
+        t.add_column("Completed", justify="right", style="green")
+        t.add_column("Failed", justify="right", style="red")
+        t.add_column("Pending", justify="right", style="yellow")
+        t.add_column("Size", justify="right", style="magenta")
+
+        total_staged = total_comp = total_fail = total_pend = 0
+        total_size = 0
+        for row in staged_by_album:
+            t.add_row(
+                row["album_title"] or "—",
+                str(row["staged_count"]),
+                str(row["comp"]),
+                str(row["fail"]),
+                str(row["pend"]),
+                format_bytes(row["total_size"] or 0)
+            )
+            total_staged += row["staged_count"]
+            total_comp += row["comp"]
+            total_fail += row["fail"]
+            total_pend += row["pend"]
+            total_size += row["total_size"] or 0
+
         console.print(t)
-    elif staged_assets is not None:
+        console.print(
+            f"[bold]Totals:[/bold] {total_staged} staged file(s) across {len(staged_by_album)} album(s) — "
+            f"[green]{total_comp} completed[/green], [red]{total_fail} failed[/red], "
+            f"[yellow]{total_pend} pending[/yellow] — {format_bytes(total_size)}"
+        )
+    elif staged_by_album is not None:
         console.print("[dim]No staged assets.[/dim]")
 
-    if staged_albums is not None and staged_assets is not None and not staged_albums and not staged_assets:
+    if staged_albums is not None and staged_by_album is not None and not staged_albums and not staged_by_album:
         console.print("[bold yellow][!][/bold yellow] Nothing is currently staged.")
 
 
@@ -421,7 +456,7 @@ def drop_column(conn: sqlite3.Connection, table: str, column: str, confirm: bool
                        "or your SQLite build predates 3.35 (DROP COLUMN support).[/dim]")
 
 
-def parse_asset_selection(conn: sqlite3.Connection, selection: str) -> list[int]:
+def parse_id_selection(conn: sqlite3.Connection, table: str, selection: str) -> list[int]:
     """
     Parses the same selection syntax used elsewhere in the pipeline
     (download.py's '5 | 3,7,12 | 1-10' prompts), plus 'all':
@@ -429,12 +464,12 @@ def parse_asset_selection(conn: sqlite3.Connection, selection: str) -> list[int]
         "14,15,22"  -> [14, 15, 22]
         "1-10"      -> [1, 2, ..., 10]
         "1-5,8,10-12" -> mixed ranges and singles
-        "all"       -> every id currently in assets
+        "all"       -> every id currently in `table`
     Raises ValueError with a clear message on malformed input.
     """
     selection = selection.strip().lower()
     if selection == "all":
-        rows = conn.execute("SELECT id FROM assets;").fetchall()
+        rows = conn.execute(f"SELECT id FROM {table};").fetchall()
         return [r["id"] for r in rows]
 
     ids: list[int] = []
@@ -451,6 +486,11 @@ def parse_asset_selection(conn: sqlite3.Connection, selection: str) -> list[int]
         else:
             ids.append(int(part))
     return ids
+
+
+def parse_asset_selection(conn: sqlite3.Connection, selection: str) -> list[int]:
+    """Backward-compatible wrapper — assets was the only table this supported before."""
+    return parse_id_selection(conn, "assets", selection)
 
 
 def set_staged(conn: sqlite3.Connection, table: str, ids: list[int], staged: bool):
@@ -521,33 +561,51 @@ def run_exec_sql(conn: sqlite3.Connection, sql: str, confirm: bool = True):
         console.print(f"[bold red][x] Exec error:[/bold red] {e}")
 
 
-def wipe_album(conn: sqlite3.Connection, album_id: int, confirm: bool = True):
+def wipe_album(conn: sqlite3.Connection, album_ids: list[int], confirm: bool = True):
     """
-    Deletes ONE album and its assets, leaving every other album untouched.
+    Deletes one or more albums and their assets, leaving every other album
+    untouched. Multiple ids share ONE confirmation prompt (listing each
+    album found) and run in ONE transaction — not a separate confirm per
+    album, which would be tedious for something like --wipe-album 12,13,14.
     No VACUUM here (unlike wipe_data/nuke_db) — VACUUM's cost scales with
     the whole DB file, not the rows removed, so running it on every
-    single-album wipe would be wasteful if you're doing this repeatedly.
+    wipe would be wasteful if you're doing this repeatedly.
     Run --exec "VACUUM;" yourself afterward if you want to reclaim space.
     """
-    row = conn.execute("SELECT title FROM albums WHERE id = ?;", (album_id,)).fetchone()
-    if not row:
-        console.print(f"[bold yellow][!][/bold yellow] No album found with id {album_id} — nothing to wipe.")
+    found = []
+    missing = []
+    for album_id in album_ids:
+        row = conn.execute("SELECT id, title FROM albums WHERE id = ?;", (album_id,)).fetchone()
+        if row:
+            asset_count = conn.execute("SELECT COUNT(*) as c FROM assets WHERE album_id = ?;", (album_id,)).fetchone()["c"]
+            found.append((row["id"], row["title"], asset_count))
+        else:
+            missing.append(album_id)
+
+    if missing:
+        console.print(f"[bold yellow][!][/bold yellow] No album found for id(s): {', '.join(str(m) for m in missing)} — skipping those.")
+
+    if not found:
+        console.print("[bold yellow][!][/bold yellow] Nothing to wipe.")
         return
 
-    asset_count = conn.execute("SELECT COUNT(*) as c FROM assets WHERE album_id = ?;", (album_id,)).fetchone()["c"]
-
     if confirm:
-        console.print(f"[bold red][!] This will DELETE album #{album_id} ('{row['title']}') "
-                       f"and its {asset_count} asset(s). Other albums are untouched.[/bold red]")
+        console.print("[bold red][!] This will DELETE the following album(s) and their assets. Other albums are untouched:[/bold red]")
+        for aid, title, acount in found:
+            console.print(f"    #{aid} ('{title}') — {acount} asset(s)")
         answer = input("Type 'yes' to continue: ").strip().lower()
         if answer != "yes":
             console.print("[dim]Aborted.[/dim]")
             return
 
     with conn:
-        conn.execute("DELETE FROM assets WHERE album_id = ?;", (album_id,))
-        conn.execute("DELETE FROM albums WHERE id = ?;", (album_id,))
-    console.print(f"[bold green][+][/bold green] Wiped album #{album_id} ('{row['title']}') and {asset_count} asset(s).")
+        for aid, _, _ in found:
+            conn.execute("DELETE FROM assets WHERE album_id = ?;", (aid,))
+            conn.execute("DELETE FROM albums WHERE id = ?;", (aid,))
+
+    total_assets = sum(a[2] for a in found)
+    console.print(f"[bold green][+][/bold green] Wiped {len(found)} album(s) and {total_assets} asset(s): "
+                   f"{', '.join(f'#{a[0]}' for a in found)}.")
 
 
 def wipe_data(conn: sqlite3.Connection, confirm: bool = True):
@@ -624,8 +682,9 @@ def main():
                          help="Set is_staged=0 for assets: id, comma list, range, or 'all' — e.g. 14,15,22 or 1-10 or all")
     parser.add_argument("--wipe", action="store_true",
                          help="Clear albums + assets, keep system_config, reclaim disk space ('start fresh')")
-    parser.add_argument("--wipe-album", type=int, metavar="ID",
-                         help="Delete ONE album and its assets, leaving other albums untouched")
+    parser.add_argument("--wipe-album", metavar="SELECTION",
+                         help="Delete one or more albums + their assets: id, comma list, or range — e.g. 12,13,14 or 7-9. "
+                              "Use --wipe (not 'all' here) to clear every album.")
     parser.add_argument("--nuke", "--purge", dest="nuke", action="store_true",
                          help="Drop ALL tables including system_config (true factory reset; auto-rebuilds on next use)")
     parser.add_argument("-y", "--yes", action="store_true",
@@ -644,7 +703,16 @@ def main():
             return
 
         if args.wipe_album is not None:
-            wipe_album(conn, args.wipe_album, confirm=not args.yes)
+            if args.wipe_album.strip().lower() == "all":
+                console.print("[bold yellow][!][/bold yellow] --wipe-album doesn't take 'all' — use --wipe instead "
+                               "(it also clears system_config-independent data the same way).")
+                return
+            try:
+                album_ids = parse_id_selection(conn, "albums", args.wipe_album)
+            except ValueError:
+                console.print("[bold red][x] --wipe-album expects an id, comma list, or range, e.g. 12,13,14 or 7-9[/bold red]")
+                return
+            wipe_album(conn, album_ids, confirm=not args.yes)
             return
 
         if args.exec_sql:
