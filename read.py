@@ -90,7 +90,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
         
     console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 1,3,5 | 1-5 | staged | Enter for ALL)[/dim]")
     console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
-    console.print(" [bold white]3.[/bold white] Download all assets in this album [green]download.py[/green]")
+    console.print(" [bold white]3.[/bold white] Download all assets in this album")
     console.print(" [bold white]4.[/bold white] Copy link to stdout")
     console.print(f" [bold white]5.[/bold white] {minter_style}")
     console.print(" [bold white]6.[/bold white] Stage/Unstage assets [dim](Accepts: 1-10 or 1,2,5 or all)[/dim]")
