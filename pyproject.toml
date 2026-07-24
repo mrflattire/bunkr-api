@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bunkr_api"
+version = "1.0.0"
+dependencies = [
+    "rich",
+    "curl_cffi",
+    "beautifulsoup4",
+    "yt-dlp",
+    "urllib3"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

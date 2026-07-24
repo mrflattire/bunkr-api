@@ -23,6 +23,9 @@ env/
 #recon_3/
 #scratch/
 
+#local build artifacts
+*.egg-info/
+
 # Ignore the tests directory and everything inside it
 tests/
 
