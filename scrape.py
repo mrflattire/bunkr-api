@@ -215,13 +215,23 @@ def extract_advanced_album_files(html_content: str) -> list:
                 file_meta[key] = str_val
                 
         if file_meta:
+            # The site's own rendering JS (createFileItem, copyList) confirms the
+            # real schema: file.slug builds the /f/ URL, file.original is the
+            # display filename. Neither is 'name' — that field was silently
+            # wrong for both href and title. Falling back to 'name' only if
+            # 'slug'/'original' are somehow absent, so this degrades instead
+            # of breaking outright if the site's structure shifts again.
+            slug = file_meta.get('slug') or file_meta.get('name')
+            display_name = file_meta.get('original') or file_meta.get('name', 'Unknown Title')
+
             parsed_files.append({
                 'slug_id': file_meta.get('id', None),
-                'href': f"https://bunkr.cr/f/{file_meta.get('name', '')}" if 'name' in file_meta else None,
-                'title': file_meta.get('name', 'Unknown Title'),
+                'href': f"https://bunkr.cr/f/{urllib.parse.quote(str(slug))}" if slug else None,
+                'title': display_name,
+                'original': display_name,
                 'size': file_meta.get('size', 0), # Store pure raw integer bytes directly for database compatibility
                 'true_file_id': file_meta.get('id', None),
-                **{k: v for k, v in file_meta.items() if k not in ['id', 'name', 'size']}
+                **{k: v for k, v in file_meta.items() if k not in ['id', 'name', 'slug', 'original', 'size']}
             })
             
     return parsed_files

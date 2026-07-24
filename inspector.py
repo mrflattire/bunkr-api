@@ -3,24 +3,92 @@
 Quick CLI to poke at media_tracker.db without writing one-off queries.
 
 Usage:
-    python inspector.py                     # zero args: dashboard overview
+    python inspector.py                     # zero args: dashboard overview (see below)
     python inspector.py --table assets       # just one table
-    python inspector.py --table assets -n 20 # show 20 sample rows instead of default 5
-    python inspector.py --table assets --all # dump every row
+    python inspector.py --table assets -n 20 # show 20 sample rows instead of the default 5
+    python inspector.py --table assets --all # dump every row (careful on big tables)
     python inspector.py --sql "SELECT * FROM assets WHERE download_status='FAILED'"
-    python inspector.py --albums            # per-album breakdown
-    python inspector.py --expiring          # tokens expiring soon
-    python inspector.py --staged            # staging overview
-    python inspector.py --stage-album 2      # stage album 2 + cascaded assets
+
+    # Per-album breakdown: files, completion %, failed count, staged count,
+    # and total size — one row per album. Complements the global dashboard,
+    # which totals across the whole DB rather than showing per-album detail.
+    python inspector.py --albums
+
+    # Which assets are stale or about to be, right now — same lookahead
+    # window (token_buffer_seconds) get_needs_refresh() uses, so this shows
+    # exactly what a mint pass would act on. Useful precisely BECAUSE it
+    # doesn't depend on mint.py's daemon actually being run.
+    python inspector.py --expiring
+
+    # Quick glance at everything staged right now — albums and assets
+    # both, since album-level and asset-level staging don't cascade
+    # back up to each other (staging an asset directly doesn't mark
+    # its album staged, and vice versa doesn't show here as a diff view).
+    python inspector.py --staged
+
+    # Dashboard (zero args only — any flag at all skips it in favor of the
+    # standard table dump). Shows row counts + pipeline metrics per table.
+    # The "Staged" metrics need an is_staged column that doesn't ship with
+    # the base schema; run these once before relying on that number:
+    #   python inspector.py --add-column assets:is_staged:INTEGER
+    #   python inspector.py --add-column albums:is_staged:INTEGER
+    # Without it, the dashboard still renders — Staged just shows "n/a"
+    # instead of erroring or blanking out the other metrics on that row.
+    python inspector.py
+
+    # Toggle staging (requires the is_staged migrations above to have run).
+    # SELECTION accepts a single id, comma list, range, or 'all' — same
+    # syntax as download.py's picker prompts.
+    #
+    # --stage-album / --unstage-album cascade: staging an album also stages
+    # every asset that belongs to it (both UPDATEs run in one transaction).
+    # --stage-assets / --unstage-assets operate on assets directly, with no
+    # album scoping — 'all' means every asset in the whole DB, not one album.
+    python inspector.py --stage-album 2          # stages album 2 + all its assets
     python inspector.py --unstage-album 2
+    python inspector.py --stage-assets 14,15,22
     python inspector.py --stage-assets 1-10
-    python inspector.py --unstage-assets all
+    python inspector.py --unstage-assets all      # clears staging on every asset, globally
+
+    # Write operations (DELETE/UPDATE/VACUUM/etc) — these commit for real,
+    # unlike --sql above which is read-only (.fetchall(), never commits).
     python inspector.py --exec "DELETE FROM assets WHERE download_status='FAILED';"
+    python inspector.py --exec "UPDATE assets SET token_expiry_timestamp = NULL;"
+
+    # Schema migrations: add a column to an existing table. Replaces the old
+    # standalone upgrade_db.py — safe to re-run, skips if column exists.
     python inspector.py --add-column assets:true_file_id:INTEGER
+
+    # Opposite: drop a column. Requires SQLite 3.35+ (bundled with Python
+    # 3.9+). Destructive — confirms by default, -y skips the prompt.
     python inspector.py --drop-column assets:true_file_id
+
+    # "Start fresh": clears albums + assets (cascades via FK), keeps
+    # system_config (poll intervals, max_workers, etc) intact, then VACUUMs
+    # to reclaim disk space. Schema itself is untouched — DatabaseManager's
+    # _init_db() would just recreate it anyway (CREATE TABLE IF NOT EXISTS),
+    # so there's nothing to "rebuild" here, only data to clear.
     python inspector.py --wipe
+
+    # Scoped version: delete one or more albums + their assets, leave
+    # everything else alone. Accepts a single id, comma list, or range —
+    # 'all' is intentionally NOT supported here, use --wipe for that.
+    # No auto-VACUUM (unlike --wipe/--nuke) since that cost scales with the
+    # whole DB, not the rows removed — run --exec "VACUUM;" yourself
+    # afterward if you want to reclaim space.
+    python inspector.py --wipe-album 7
+    python inspector.py --wipe-album 12,13,14
     python inspector.py --wipe-album 7-9
+
+    # True factory reset: drops every table, INCLUDING system_config, so
+    # tuned settings revert to defaults too. Nothing to run afterward —
+    # the next DatabaseManager() (e.g. next time you scrape a new album)
+    # calls _init_db() in __init__ and rebuilds schema + seeded config
+    # automatically. Confirmation requires typing 'nuke', not 'yes'.
     python inspector.py --nuke
+
+    # -y skips the confirmation prompt on --exec / --wipe / --nuke, for
+    # scripted/non-interactive use (e.g. wiring a "reset" button to this later).
     python inspector.py --wipe -y
 """
 import argparse
@@ -31,6 +99,7 @@ from contextlib import closing
 
 from rich.console import Console
 from rich.table import Table
+from rich.pretty import pprint
 from rich.panel import Panel
 
 from core import DatabaseManager
@@ -65,15 +134,21 @@ def get_columns(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
 # ============================================================
 
 def display_global_dashboard(conn: sqlite3.Connection):
-    """Scannable overview: every table, row count, and per-table pipeline metrics."""
+    """
+    Scannable overview: every table, row count, and per-table pipeline
+    metrics. Triggers automatically when inspector.py is run with zero
+    args — see main() below.
+
+    Each metric is queried in its OWN try/except so a single missing
+    column (e.g. is_staged, before its migration has been run) only
+    blanks that one number instead of discarding the whole row's metrics.
+    An earlier version wrapped all of a table's metrics in one shared
+    try block, which meant one failing query threw away metrics that had
+    already been successfully computed just above it.
+    """
     tables = get_table_names(conn)
 
-    summary_table = Table(
-        title="[bold magenta]Database Volume & Pipeline Summary[/bold magenta]",
-        expand=True,
-        style="dim white",
-        border_style="dim"
-    )
+    summary_table = Table(title="[bold magenta]Database Volume & Pipeline Summary[/bold magenta]", expand=True)
     summary_table.add_column("Table Name", style="cyan", no_wrap=True)
     summary_table.add_column("Total Records", style="magenta", justify="right")
     summary_table.add_column("Pipeline Execution Metrics / Breakdown", style="green")
@@ -109,11 +184,15 @@ def display_global_dashboard(conn: sqlite3.Connection):
 
         summary_table.add_row(table, str(count), metrics)
 
-    console.print(Panel(summary_table, border_style="dim", title="[bold white]Media Tracker Management System[/bold white]"))
+    console.print(Panel(summary_table, border_style="magenta", title="[bold white]Media Tracker Management System[/bold white]"))
 
 
 def display_albums_breakdown(conn: sqlite3.Connection):
-    """One row per album: file count, download completion %, staged status, and total size."""
+    """
+    One row per album: file count, download completion %, staged status,
+    and total size. The global dashboard tells you totals across the
+    whole DB; this tells you which specific albums still need attention.
+    """
     albums = conn.execute("SELECT * FROM albums ORDER BY id ASC;").fetchall()
     if not albums:
         console.print("[bold yellow][!][/bold yellow] No albums in the database.")
@@ -126,12 +205,7 @@ def display_albums_breakdown(conn: sqlite3.Connection):
         except sqlite3.OperationalError:
             return fallback
 
-    t = Table(
-        title="[bold magenta]Per-Album Breakdown[/bold magenta]",
-        expand=True,
-        style="dim white",
-        border_style="dim"
-    )
+    t = Table(title="[bold magenta]Per-Album Breakdown[/bold magenta]", expand=True)
     t.add_column("ID", justify="right", style="cyan")
     t.add_column("Title", style="white")
     t.add_column("Files", justify="right")
@@ -160,7 +234,12 @@ def display_albums_breakdown(conn: sqlite3.Connection):
 
 
 def display_expiring_report(conn: sqlite3.Connection):
-    """Which assets are stale or about to be right now."""
+    """
+    Which assets are stale or about to be, right now — independent of
+    whether mint.py's daemon is actually running. Same lookahead window
+    (token_buffer_seconds) get_needs_refresh() uses, so what shows up
+    here is exactly what a mint pass would act on if you ran one.
+    """
     buffer_row = conn.execute(
         "SELECT config_value FROM system_config WHERE config_key='token_buffer_seconds';"
     ).fetchone()
@@ -181,12 +260,7 @@ def display_expiring_report(conn: sqlite3.Connection):
         console.print(f"[bold green][+][/bold green] Nothing expiring within the next {lookahead}s. All tokens fresh.")
         return
 
-    t = Table(
-        title=f"[bold magenta]Expiring/Expired Tokens (within {lookahead}s lookahead)[/bold magenta]",
-        expand=True,
-        style="dim white",
-        border_style="dim"
-    )
+    t = Table(title=f"[bold magenta]Expiring/Expired Tokens (within {lookahead}s lookahead)[/bold magenta]", expand=True)
     t.add_column("Asset ID", justify="right", style="cyan")
     t.add_column("Album", style="white")
     t.add_column("Title", style="white")
@@ -216,7 +290,12 @@ def display_expiring_report(conn: sqlite3.Connection):
 
 
 def display_staged_overview(conn: sqlite3.Connection):
-    """High-level glance at staging state — grouped by album."""
+    """
+    High-level glance at staging state — grouped by album, not a per-row
+    dump. A dump of every staged asset individually stops being useful
+    once you have more than a handful staged at once; what's actually
+    actionable is "how much is staged, where, and what state is it in."
+    """
     def safe_rows(sql: str, fallback_msg: str):
         try:
             return conn.execute(sql).fetchall()
@@ -244,12 +323,7 @@ def display_staged_overview(conn: sqlite3.Connection):
     )
 
     if staged_albums:
-        t = Table(
-            title="[bold magenta]Staged Albums (album-level flag)[/bold magenta]",
-            expand=True,
-            style="dim white",
-            border_style="dim"
-        )
+        t = Table(title="[bold magenta]Staged Albums (album-level flag)[/bold magenta]", expand=True)
         t.add_column("ID", justify="right", style="cyan")
         t.add_column("Title", style="white")
         t.add_column("Files", justify="right")
@@ -260,12 +334,7 @@ def display_staged_overview(conn: sqlite3.Connection):
         console.print("[dim]No albums flagged staged at the album level.[/dim]")
 
     if staged_by_album:
-        t = Table(
-            title="[bold magenta]Staged Assets by Album[/bold magenta]",
-            expand=True,
-            style="dim white",
-            border_style="dim"
-        )
+        t = Table(title="[bold magenta]Staged Assets by Album[/bold magenta]", expand=True)
         t.add_column("Album", style="white")
         t.add_column("Staged Files", justify="right", style="cyan")
         t.add_column("Completed", justify="right", style="green")
@@ -308,51 +377,18 @@ def display_staged_overview(conn: sqlite3.Connection):
 # ============================================================
 
 def print_schema(conn: sqlite3.Connection, table: str):
-    """Renders table schema structure using a formatted Rich Table."""
     cols = get_columns(conn, table)
-    t = Table(
-        title=f"Schema Definition: [cyan]{table}[/cyan]",
-        show_header=True,
-        header_style="bold magenta",
-        style="dim white",
-        border_style="dim"
-    )
-    t.add_column("Column", style="white")
-    t.add_column("Type", style="yellow")
-    t.add_column("Not Null", justify="center")
-    t.add_column("PK", justify="center", style="magenta")
-    
+    t = Table(title=f"schema: {table}", show_lines=False)
+    t.add_column("col")
+    t.add_column("type")
+    t.add_column("notnull")
+    t.add_column("pk")
     for c in cols:
-        is_nn = "[bold green]YES[/bold green]" if c["notnull"] else "[dim white]NO[/dim white]"
-        is_pk = "[bold green]YES[/bold green]" if c["pk"] else "[dim white]NO[/dim white]"
-        t.add_row(c["name"], c["type"], is_nn, is_pk)
+        t.add_row(c["name"], c["type"], str(bool(c["notnull"])), str(bool(c["pk"])))
     console.print(t)
 
 
-def format_cell_value(col_name: str, val) -> str:
-    """Helper to format column data smartly according to app context."""
-    if val is None:
-        return "[dim white]NULL[/dim white]"
-    
-    val_str = str(val)
-    
-    # Specific styling logic based on column context
-    if col_name == "download_status":
-        if val == "COMPLETED": return "[bold green]COMPLETED[/bold green]"
-        if val == "FAILED": return "[bold red]FAILED[/bold red]"
-        if val == "PENDING": return "[bold yellow]PENDING[/bold yellow]"
-    elif col_name == "is_staged":
-        return "[bold green]1 (STAGED)[/bold green]" if val == 1 else "[dim white]0[/dim white]"
-    elif col_name == "raw_size_bytes":
-        return format_bytes(val)
-    elif "url" in col_name and len(val_str) > 40:
-        return f"[blue]{val_str[:37]}...[/blue]"
-        
-    return val_str
-
-
 def print_rows(conn: sqlite3.Connection, table: str, limit: int | None):
-    """Renders query results in a clean grid instead of raw dictionaries."""
     query = f"SELECT * FROM {table}"
     if limit is not None:
         query += f" LIMIT {limit}"
@@ -360,67 +396,34 @@ def print_rows(conn: sqlite3.Connection, table: str, limit: int | None):
     rows = conn.execute(query).fetchall()
 
     if not rows:
-        console.print(f"[dim]  (no records discovered inside '{table}')[/dim]")
+        console.print(f"[dim]  (no rows in {table})[/dim]")
         return
 
-    cols = rows[0].keys()
-    
-    t = Table(
-        show_header=True,
-        header_style="bold cyan",
-        style="dim white",
-        border_style="dim",
-        expand=True
-    )
-    for col in cols:
-        t.add_column(col)
-
     for row in rows:
-        row_dict = dict(row)
-        formatted_row = [format_cell_value(k, row_dict[k]) for k in cols]
-        t.add_row(*formatted_row)
-
-    console.print(t)
+        pprint(dict(row))
 
 
 def inspect_table(conn: sqlite3.Connection, table: str, limit: int | None):
     count = get_row_count(conn, table)
-    console.print(f"\n[bold yellow][*] Inspecting Table:[/bold yellow] [bold white]{table}[/bold white] [dim]({count} total records)[/dim]")
+    console.print(f"\n[bold yellow][*] {table}[/bold yellow]  [dim]({count} rows)[/dim]")
     print_schema(conn, table)
     shown = "all" if limit is None else limit
-    console.print(f"\n[bold cyan]  Dataset Sample Records (showing {shown}):[/bold cyan]")
+    console.print(f"[bold white]  sample rows (showing {shown}):[/bold white]")
     print_rows(conn, table, limit)
 
 
 def run_raw_sql(conn: sqlite3.Connection, sql: str):
-    console.print(f"[bold yellow][*] Executing Query Sequence:[/bold yellow] {sql}")
+    console.print(f"[bold yellow][*] Running:[/bold yellow] {sql}")
     try:
         rows = conn.execute(sql).fetchall()
     except Exception as e:
-        console.print(f"[bold red][x] Query Execution Error:[/bold red] {e}")
+        console.print(f"[bold red][x] Query error:[/bold red] {e}")
         return
-        
     if not rows:
-        console.print("[dim](query executed successfully, no rows returned)[/dim]")
+        console.print("[dim](no rows returned)[/dim]")
         return
-
-    cols = rows[0].keys()
-    t = Table(
-        show_header=True,
-        header_style="bold cyan",
-        style="dim white",
-        border_style="dim",
-        expand=True
-    )
-    for col in cols:
-        t.add_column(col)
-
     for row in rows:
-        row_dict = dict(row)
-        formatted_row = [format_cell_value(k, row_dict[k]) for k in cols]
-        t.add_row(*formatted_row)
-
-    console.print(t)
+        pprint(dict(row))
 
 
 # ============================================================
@@ -428,8 +431,13 @@ def run_raw_sql(conn: sqlite3.Connection, sql: str):
 # ============================================================
 
 def add_column(conn: sqlite3.Connection, table: str, column: str, col_type: str):
+    """
+    Adds a column to an existing table. Mirrors the old standalone
+    upgrade_db.py pattern: SQLite has no 'ADD COLUMN IF NOT EXISTS', so we
+    lean on the OperationalError it raises when the column already exists.
+    """
     sql = f"ALTER TABLE {table} ADD COLUMN {column} {col_type};"
-    console.print(f"[bold yellow][*] Running Migration:[/bold yellow] {sql}")
+    console.print(f"[bold yellow][*] Running:[/bold yellow] {sql}")
     try:
         with conn:
             conn.execute(sql)
@@ -439,6 +447,12 @@ def add_column(conn: sqlite3.Connection, table: str, column: str, col_type: str)
 
 
 def drop_column(conn: sqlite3.Connection, table: str, column: str, confirm: bool = True):
+    """
+    Drops a column from an existing table. Requires SQLite 3.35+ for native
+    ALTER TABLE ... DROP COLUMN support (bundled with Python 3.9+, so this
+    should just work). Destructive — data in that column is gone for good,
+    so it's confirmed like --exec/--wipe/--nuke rather than running silently.
+    """
     if confirm:
         console.print(f"[bold red][!] This will permanently DROP column '{column}' from '{table}'. Data in it is lost.[/bold red]")
         answer = input("Type 'yes' to continue: ").strip().lower()
@@ -447,7 +461,7 @@ def drop_column(conn: sqlite3.Connection, table: str, column: str, confirm: bool
             return
 
     sql = f"ALTER TABLE {table} DROP COLUMN {column};"
-    console.print(f"[bold yellow][*] Running Migration:[/bold yellow] {sql}")
+    console.print(f"[bold yellow][*] Running:[/bold yellow] {sql}")
     try:
         with conn:
             conn.execute(sql)
@@ -463,6 +477,16 @@ def drop_column(conn: sqlite3.Connection, table: str, column: str, confirm: bool
 # ============================================================
 
 def parse_id_selection(conn: sqlite3.Connection, table: str, selection: str) -> list[int]:
+    """
+    Parses the same selection syntax used elsewhere in the pipeline
+    (download.py's '5 | 3,7,12 | 1-10' prompts), plus 'all':
+        "14"        -> [14]
+        "14,15,22"  -> [14, 15, 22]
+        "1-10"      -> [1, 2, ..., 10]
+        "1-5,8,10-12" -> mixed ranges and singles
+        "all"       -> every id currently in `table`
+    Raises ValueError with a clear message on malformed input.
+    """
     selection = selection.strip().lower()
     if selection == "all":
         rows = conn.execute(f"SELECT id FROM {table};").fetchall()
@@ -485,10 +509,17 @@ def parse_id_selection(conn: sqlite3.Connection, table: str, selection: str) -> 
 
 
 def parse_asset_selection(conn: sqlite3.Connection, selection: str) -> list[int]:
+    """Backward-compatible wrapper — assets was the only table this supported before."""
     return parse_id_selection(conn, "assets", selection)
 
 
 def set_staged(conn: sqlite3.Connection, table: str, ids: list[int], staged: bool):
+    """
+    Toggles is_staged for one or more rows in albums/assets. Wraps the same
+    UPDATE ... SET is_staged=... WHERE id IN (...) pattern, just without
+    needing to hand-write/quote raw SQL each time. Reversible, so unlike
+    --wipe/--nuke this doesn't prompt for confirmation.
+    """
     placeholders = ", ".join("?" for _ in ids)
     sql = f"UPDATE {table} SET is_staged = ? WHERE id IN ({placeholders});"
     try:
@@ -503,6 +534,12 @@ def set_staged(conn: sqlite3.Connection, table: str, ids: list[int], staged: boo
 
 
 def stage_album_cascade(conn: sqlite3.Connection, album_id: int, staged: bool):
+    """
+    Stages/unstages an album AND cascades the same value to every asset
+    belonging to it, in one transaction. This is the intended behavior:
+    staging an album means staging its contents, not just flagging the
+    album record on its own.
+    """
     try:
         with conn:
             album_cursor = conn.execute(
@@ -529,6 +566,10 @@ def stage_album_cascade(conn: sqlite3.Connection, album_id: int, staged: bool):
 # ============================================================
 
 def run_exec_sql(conn: sqlite3.Connection, sql: str, confirm: bool = True):
+    """
+    For write statements (DELETE, UPDATE, VACUUM, etc). Commits explicitly,
+    since these don't return rows the way run_raw_sql's SELECT path expects.
+    """
     if confirm:
         console.print(f"[bold red][!] About to execute (this writes to the DB):[/bold red] {sql}")
         answer = input("Type 'yes' to continue: ").strip().lower()
@@ -545,6 +586,16 @@ def run_exec_sql(conn: sqlite3.Connection, sql: str, confirm: bool = True):
 
 
 def wipe_album(conn: sqlite3.Connection, album_ids: list[int], confirm: bool = True):
+    """
+    Deletes one or more albums and their assets, leaving every other album
+    untouched. Multiple ids share ONE confirmation prompt (listing each
+    album found) and run in ONE transaction — not a separate confirm per
+    album, which would be tedious for something like --wipe-album 12,13,14.
+    No VACUUM here (unlike wipe_data/nuke_db) — VACUUM's cost scales with
+    the whole DB file, not the rows removed, so running it on every
+    wipe would be wasteful if you're doing this repeatedly.
+    Run --exec "VACUUM;" yourself afterward if you want to reclaim space.
+    """
     found = []
     missing = []
     for album_id in album_ids:
@@ -582,6 +633,11 @@ def wipe_album(conn: sqlite3.Connection, album_ids: list[int], confirm: bool = T
 
 
 def wipe_data(conn: sqlite3.Connection, confirm: bool = True):
+    """
+    Soft wipe: clears albums + assets (cascades via FK), keeps system_config
+    intact, then reclaims disk space. Use for 'start fresh' without losing
+    tuned settings like poll intervals.
+    """
     if confirm:
         console.print("[bold red][!] This will DELETE all albums and assets. system_config is kept.[/bold red]")
         answer = input("Type 'yes' to continue: ").strip().lower()
@@ -597,6 +653,14 @@ def wipe_data(conn: sqlite3.Connection, confirm: bool = True):
 
 
 def nuke_db(conn: sqlite3.Connection, confirm: bool = True):
+    """
+    True factory reset: drops every table, including system_config, so
+    tuned settings (poll intervals, max_workers, etc) revert to defaults too.
+    Nothing needs to be run afterward — the next DatabaseManager() instance
+    (e.g. the next time reader.py ingests a scrape) calls _init_db() in its
+    __init__, which recreates tables/indexes/seeded config via
+    CREATE TABLE IF NOT EXISTS + INSERT OR IGNORE. Rebuild is automatic.
+    """
     if confirm:
         console.print("[bold red][!] This will DROP ALL TABLES, including system_config (settings reset to defaults).[/bold red]")
         answer = input("Type 'nuke' to continue: ").strip().lower()
@@ -758,6 +822,10 @@ def main():
             display_staged_overview(conn)
             return
 
+        # Overview dashboard when run with truly zero args. The len(sys.argv)
+        # check (not just "not args.table and not args.all") matters here:
+        # someone running `-n 5` alone should still get the full table dump
+        # at that limit, not get redirected into the dashboard.
         if not args.table and not args.all and len(sys.argv) == 1:
             display_global_dashboard(conn)
             return

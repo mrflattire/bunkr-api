@@ -177,10 +177,18 @@ class DatabaseManager:
                     """, (
                         album_id, idx, true_file_id,
                         file_rec.get("title", f"Track {idx}"),
-                        file_rec.get("original", f"track_{idx}.mp3"),
+                        # No hardcoded .mp3 — these are mostly video files (m4v/mp4),
+                        # and 'original' is now always populated with the real
+                        # filename+extension from the source (see scrape.py fix).
+                        # This fallback only fires if 'original' is genuinely missing.
+                        file_rec.get("original", f"file_{idx}"),
                         file_rec.get("size", 0),
                         file_rec.get("href", cdn_url),
                         cdn_url, expiry_ts
+                        # cdnEndpoint intentionally NOT stored — it's a raw path
+                        # fragment (no host, no token), superseded by minting.
+                        # Kept in the JSON payload (files_found) only, if
+                        # --save-json is used; core.py never persists it to SQLite.
                     ))
 
             return album_id
