@@ -18,9 +18,10 @@ env/
 *.json
 
 # Ignore the recon directory and everything inside it
-recon/
-recon_advanced/
-scratch/
+#recon/
+#recon_2/
+#recon_3/
+#scratch/
 
 # Ignore the tests directory and everything inside it
 tests/

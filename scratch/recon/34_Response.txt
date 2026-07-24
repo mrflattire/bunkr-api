@@ -1,0 +1,23 @@
+HTTP/1.1 202 Accepted
+Date: Fri, 10 Jul 2026 17:02:27 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 2
+Connection: keep-alive
+Server: cloudflare
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Origin: *
+Access-Control-Expose-Headers: 
+Cache-Control: max-age=0, private, must-revalidate
+X-Request-Id: GMD8YWQ93t8Ah6cEQVAj
+X-Xss-Protection: 1; mode=block
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: interest-cohort=()
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+Cf-Cache-Status: DYNAMIC
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=x50suyXaUEwyg4Xsn6yN2xlKXqaA2Fay25Ay3zkc%2FYnwikpCygppixTFpIJNzgJWE6B1UPLJ1ods4%2Bmwr%2Fa%2B9zF5qDKv5mc7No%2BXFQH9CvZuJdjGJwKag9VXgoxQOvO6"}]}
+CF-RAY: a19122de4ed5c836-EBB
+alt-svc: h3=":443"; ma=86400
+
+ok

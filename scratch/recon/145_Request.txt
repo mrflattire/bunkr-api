@@ -1,0 +1,15 @@
+OPTIONS https://s.bunkr.ru/api/file/stats/59975730 HTTP/1.1
+Host: s.bunkr.ru
+Connection: keep-alive
+Accept: */*
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: content-type
+Origin: https://bunkr.cr
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Dest: empty
+Referer: https://bunkr.cr/
+Accept-Encoding: gzip, deflate, br, gzip
+Accept-Language: en-US,en;q=0.9
+

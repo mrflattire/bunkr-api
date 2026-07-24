@@ -1,0 +1,22 @@
+POST https://bob.tinyns.me/api/event HTTP/1.1
+Host: bob.tinyns.me
+Connection: keep-alive
+Content-Length: 149
+Pragma: no-cache
+Cache-Control: no-cache
+sec-ch-ua-platform: "Windows"
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Brave";v="150"
+Content-Type: text/plain
+sec-ch-ua-mobile: ?0
+Accept: */*
+Sec-GPC: 1
+Accept-Language: en-US,en;q=0.8
+Origin: https://balbums.st
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://balbums.st/
+Accept-Encoding: gzip, deflate, br, gzip
+
+{"n":"pageview","v":33,"u":"https://balbums.st/","d":"bunkr-albums.io","r":"https://balbums.st/?search=Inpossibleoreo&mode=broad&per=20&sort=latest"}

@@ -1,0 +1,21 @@
+POST https://bunkr.cr/api/lv HTTP/1.1
+Host: bunkr.cr
+Connection: keep-alive
+Content-Length: 17
+sec-ch-ua-platform: "Windows"
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Brave";v="150"
+Content-Type: application/json
+sec-ch-ua-mobile: ?0
+Accept: */*
+Sec-GPC: 1
+Accept-Language: en-US,en;q=0.6
+Origin: https://bunkr.cr
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://bunkr.cr/f/fnCXw7gJ2Tcib
+Accept-Encoding: gzip, deflate, br, gzip
+Cookie: __PPU_puid=16865481129874040575; UGVyc2lzdFN0b3JhZ2U=%7B%22CAIFRQ%22%3A%22ADuppwAAAAAAAAABADpRdQAAAAAAAAAB%22%2C%22CAIFRT%22%3A%22ADuppwAAAABqDpFQADpRdQAAAABqDpFQ%22%7D
+
+{"id":"59975730"}

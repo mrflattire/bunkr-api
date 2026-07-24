@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://bunkr.ph/css/master.css" rel="stylesheet">
+    <script defer data-domain="get.bunkrr.su" data-t="v" data-v="a5eca49b-10e4-4607-9174-3a5ec6fb79f1.mp4" src="https://bunkr.ph/js/lv.js"></script>
+    <title>Download Snowbunny has the BIGGEST all natural ass!.mp4</title>
+    <script>var ogname = "Snowbunny has the BIGGEST all natural ass!.mp4";</script>
+</head>
+<body>
+    <div class="ttwp" style="min-height: 100%;">
+        <div class="cont flex-1 flex items-center justify-center">
+            <div class="grid auto-rows-max gap-3 py-16 w-full max-w-md">
+                <span class="ic-videos w-12 h-12 rounded-full bg-main/10 text-main mx-auto ic-before grid place-content-center text-xl"></span>
+                <div class="text-center">
+                    <h1 class="text-2xl text-subs font-semibold">Snowbunny has the BIGGEST all natural ass!.mp4</h1>
+                    <p class="mt-1 text-xs">193.24 MB</p>
+                </div>
+                
+
+                <p class="mt-3 text-center">
+                    <a id="download-btn" class="btn btn-main btn-lg rounded-full px-6 font-semibold ic-download-01 ic-before before:text-lg" href="#" data-id="59975730">
+                        Download
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+<script>
+
+const SIGN_SERVICE_URL = 'https://glb-apisign.cdn.cr/sign';
+
+async function getSignedUrl(rawUrl) {
+    const orig = new URL(rawUrl);
+    const path = decodeURIComponent(orig.pathname);
+    const r = await fetch(
+        SIGN_SERVICE_URL + '?path=' + encodeURIComponent(path),
+        { credentials: 'omit' }
+    );
+    if (!r.ok) throw new Error('sign ' + r.status);
+    const { token, ex } = await r.json();
+    orig.searchParams.set('token', token);
+    orig.searchParams.set('ex', ex);
+    return orig.toString();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const downloadBtn = document.getElementById('download-btn');
+    if (!downloadBtn) {
+        console.error('Download button not found');
+        return;
+    }
+    const id = downloadBtn.getAttribute('data-id');
+    downloadBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fetch('/api/_001_v2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id })
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Metadata fetch failed');
+            return response.json();
+        })
+        .then(meta => {
+            const rawUrl = new URL(meta.mediafiles + meta.path);
+            const originalName = meta.original || (typeof ogname !== 'undefined' ? ogname : '');
+            if (originalName) rawUrl.searchParams.set('n', originalName);
+            return getSignedUrl(rawUrl.toString());
+        })
+        .then(signedUrl => {
+            window.location.href = signedUrl;
+        })
+        .catch(error => console.error('Download error:', error));
+    });
+});
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"b6c59e8c6c2142a9b115056e49874db5","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+GET https://balbums.st/topimages HTTP/1.1
+Host: balbums.st
+Connection: keep-alive
+sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Brave";v="150"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8
+Sec-GPC: 1
+Accept-Language: en-US,en;q=0.8
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Referer: https://balbums.st/topfiles
+Accept-Encoding: gzip, deflate, br, gzip
+Cookie: UGVyc2lzdFN0b3JhZ2U=%7B%22CAIFRQ%22%3A%22ADt17wAAAAAAAAAB%22%2C%22CAIFRT%22%3A%22ADt17wAAAABqDpFQ%22%7D; __PPU_puid=16865467403158635523
+

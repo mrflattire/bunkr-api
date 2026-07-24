@@ -1,0 +1,833 @@
+HTTP/1.1 200 OK
+Server: Angie
+Date: Sun, 12 Jul 2026 18:16:31 GMT
+Content-Type: text/html; charset=utf-8
+Connection: keep-alive
+Content-Length: 65461
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bunkr Albums - A Simple List of all Bunkr Albums</title>
+<meta name="description" content="A Simple List of all of Bunkr's Albums">
+<meta property="og:url" content="https://bunkr-albums.io" />
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+	:root {
+		--bg: #0a0a0b;
+		--bg-soft: #111114;
+		--bg-card: #15151a;
+		--bg-elev: #1c1c22;
+		--line: #25252d;
+		--line-soft: #1d1d24;
+		--text: #e8e8ec;
+		--text-soft: #9a9aa6;
+		--text-mute: #5e5e6b;
+		--accent: #d4ff3a;
+		--accent-soft: #d4ff3a22;
+		--warn: #ff7a59;
+	}
+	* { -webkit-font-smoothing: antialiased; }
+	html, body {
+		background: var(--bg);
+		color: var(--text);
+		font-family: 'Geist', system-ui, sans-serif;
+		font-feature-settings: "ss01", "cv11";
+	}
+	.serif { font-family: 'Instrument Serif', serif; font-weight: 400; letter-spacing: -0.01em; }
+	.mono { font-family: 'JetBrains Mono', monospace; }
+	.grain {
+		position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: .035;
+		background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+	}
+	.card {
+		background: var(--bg-card);
+		border: 1px solid var(--line-soft);
+		transition: all .35s cubic-bezier(.2,.8,.2,1);
+	}
+	.card:hover { border-color: var(--line); transform: translateY(-2px); }
+	.card:hover .thumb-overlay { opacity: 1; }
+	.card:hover .thumb-img { transform: scale(1.04); }
+	.thumb-img { transition: transform .6s cubic-bezier(.2,.8,.2,1); }
+	.thumb-overlay {
+		opacity: 0; transition: opacity .3s ease;
+		background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.85) 100%);
+	}
+	.chip {
+		background: var(--bg-elev);
+		border: 1px solid var(--line);
+		transition: all .2s ease;
+	}
+	.chip:hover { border-color: var(--text-mute); color: var(--text); }
+	.chip.active,
+	.chip:has(input:checked) { background: var(--accent); color: #0a0a0b; border-color: var(--accent); }
+	.has-tip { position: relative; }
+	.has-tip::after {
+		content: attr(data-tip);
+		position: absolute;
+		bottom: calc(100% + 8px);
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 8px 12px;
+		background: var(--bg-elev);
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		font-size: 11px;
+		line-height: 1.45;
+		color: var(--text);
+		font-weight: 400;
+		width: max-content;
+		max-width: 240px;
+		white-space: normal;
+		text-align: center;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity .15s ease;
+		z-index: 50;
+		box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+	}
+	.has-tip::before {
+		content: '';
+		position: absolute;
+		bottom: calc(100% + 3px);
+		left: 50%;
+		transform: translateX(-50%);
+		border: 5px solid transparent;
+		border-top-color: var(--line);
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity .15s ease;
+		z-index: 51;
+	}
+	.has-tip:hover::after, .has-tip:hover::before { opacity: 1; }
+	.seg { background: var(--bg-soft); border: 1px solid var(--line); }
+	.seg a, .seg button { transition: all .2s ease; }
+	.seg .active { background: var(--bg-elev); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+	.input {
+		background: var(--bg-soft);
+		border: 1px solid var(--line);
+		transition: border-color .2s ease;
+	}
+	.input:focus, .input:focus-within { outline: none; border-color: var(--accent); }
+	.btn-primary { background: var(--accent); color: #0a0a0b; transition: all .2s ease; }
+	.btn-primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
+	.btn-ghost { border: 1px solid var(--line); transition: all .2s ease; }
+	.btn-ghost:hover { border-color: var(--text-mute); background: var(--bg-elev); }
+	.divider-dot::before { content: "·"; margin: 0 .5rem; color: var(--text-mute); }
+	.drawer {
+		transform: translateY(-10px); opacity: 0; pointer-events: none;
+		transition: all .35s cubic-bezier(.2,.8,.2,1);
+	}
+	.drawer.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+	.tag-img { background: #1f2a3e; color: #7eb3ff; }
+	.tag-vid { background: #2a1f3e; color: #b07eff; }
+	.tag-aud { background: #3e2a1f; color: #ffb07e; }
+	.tag-doc { background: #1f3e2a; color: #7effb0; }
+	.tag-mix { background: #2a2a2a; color: #c8c8d0; }
+	@keyframes fadeup {
+		from { opacity: 0; transform: translateY(8px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	.fadeup { animation: fadeup .6s cubic-bezier(.2,.8,.2,1) both; }
+	.pulse-dot {
+		width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+		box-shadow: 0 0 0 0 var(--accent); animation: pulse 2s infinite;
+	}
+	@keyframes pulse {
+		0% { box-shadow: 0 0 0 0 rgba(212,255,58,0.5); }
+		70% { box-shadow: 0 0 0 8px rgba(212,255,58,0); }
+		100% { box-shadow: 0 0 0 0 rgba(212,255,58,0); }
+	}
+	::selection { background: var(--accent); color: #0a0a0b; }
+	::-webkit-scrollbar { width: 10px; height: 10px; }
+	::-webkit-scrollbar-track { background: var(--bg); }
+	::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+	::-webkit-scrollbar-thumb:hover { background: var(--text-mute); }
+</style>
+
+<script async src="https://js.wpadmngr.com/static/adManager.js" data-admpid="445159"></script>
+<script data-cfasync="false">!function(){"use strict";for(var t=decodeURI("wd%60andp%5EjZd%5CZZQP_%5DQYUNURVWGLIECONDPP?MCIL:BI;%3C65?%3C/6:0%3Eq%3C,3-%25160-+-%7D%20%20%7Dyyut#t%20v$v!ryz!nQ%7BkrvhrmabcAkh%5Bbfkjaie%5EUbPZYUY%5D%5DIUIJ%5EIIQOOSMP%3CAS%3E%3E9D886=3;=05/-5*(/)'/+1)#%7C%20(yzzvzzv)yp%25x%7Brkj%7Cltfeffggvonih%5D%5C%5Bcba%5CZk%5BSRcW_dPSa%60MN%5DLWKMJITWOJAAKKK:=AGt=tA@@%3C%3Em6%20)94.2*A0%22)#%200!/'z+~$%22A@@ORcbQNh11F54m2CCCCCCCCCCCCCCCCCCCCCCCCCCIIIIIIIIIIIIIIIIIIIIIIIIII%5D%5D%5D%5D%5D%5D%5D%5D%5D%5D1$:t/4!%25k*#',*R:%7CvNM7jq74G1ch3%2040;/-%5C)&%22:V'%20Zebp%5C%60yL%7DzA%5B%60MQ-%5DKSXRPUOTAEOO;KL6F85?%3E!/.%3E.?l?/.,8*1,640%205+zm~%25%7C%25~*!qZTTm_qny%7BllxdciptcqcbjkfZl%5DegaiW_T%5E%60P%5BWY%5B,LVYLRTJEMR%3EPDIG_.?CfdZMWGebTGQu)*n38(.I%60/.)!y.%7D++tsv~rrst%20%20%20%7CrvnrtgdnTtnp%5Ec%60bmlgi/#%22UWQbg%5BORO%5D%3CPSJ%5ERPF/EDPAO%3E:L8b01sr~#tMXA?0U_-'17(").replace(/((\x40){2})/g,"$2").split("").map(((t,n)=>{const r=t.charCodeAt(0)-32;return r>=0&&r<95?String.fromCharCode(32+(r+n)%95):t})).join(""),n=[0,9,16,23,29,35,41,47,53,59,65,71,75,79,80,81,91,104,107,110,112,115,123,126,131,134,141,143,149,155,161,174,178,180,181,187,188,190,192,194,197,200,204,208,213,219,226,234,236,243,252,253,253,259,267,269,270,275,277,281,282,283,345,359,360,361,364,370,386,398,399,409,421,423,428,431,433,439,443,448,470,471,474,480,488,494,504,515,539,544,551,558,564,576,584,591,608,613,614,615,621,622,627,632],r=0;r<n.length-1;r++)n[r]=t.substring(n[r],n[r+1]);var o=[n[0],n[1],n[2],n[3],n[4],n[5],n[6],n[7],n[8],n[9],n[10]];o.push(o[1]+n[11]);var e=window,s=e.Math,c=e.Error,i=e.RegExp,u=e.document,l=e.navigator,h=e.Uint8Array;r=[n[12],o[7],n[13]+o[8],n[14]+o[8],n[15],n[16],n[17],n[18],n[19],n[20],n[21]];const a=n[22]+o[10],C={2:a+n[23],15:a+n[23],9:a+o[4],16:a+o[4],10:a+o[3],17:a+o[3],19:a+n[24],20:a+n[24],21:a+n[24]},f=n[25]+o[10],I={2:o[2],15:o[2],9:o[4],16:o[4],10:o[3],17:o[3],5:n[26],7:n[26],19:n[24],20:n[24],21:n[24]},d={15:n[27],16:n[28],17:n[29],19:o[6],20:o[6],21:o[6]},v=n[30],D=v+n[31],E=v+o[7],w=n[32]+o[1]+n[33],g=n[34],p=g+(o[1]+n[35]),y=g+o[11],P=g+(o[11]+n[36]),B=[n[37],n[38],n[39],n[40],n[41],n[42],n[43],n[44],n[45],n[46]],b=n[47],A={0:n[48],1:n[49]};class m extends c{constructor(t,o=0,s){super(t+(s?n[50]+s:n[51])),this[r[0]]=A[o],e.Object.setPrototypeOf(this,m.prototype)}}function M(t,r,o){try{return n[52],t()}catch(t){if(r)return r(t)}}const O=t=>{const[o]=t.split(n[54]);let[e,s,c]=((t,n)=>{let[r,o,...e]=t.split(n);return o=[o,...e].join(n),[r,o,!!e.length]})(t,n[55]);c&&M((()=>{throw new m(n[56])}),typeof handleException===n[53]?t=>{null===handleException||void 0===handleException||handleException(t)}:undefined);const u=new i(n[57]+o+n[58],n[59]),[l,...h]=e.replace(u,n[51]).split(n[60]);return{protocol:o,origin:e,[r[1]]:l,path:h.join(n[60]),search:s}},S=n[61],R=[[97,122],[65,90],[48,57]],z=n[62],U=(t,n)=>s.floor(s.random()*(n-t+1))+t;function Z(t){let r=n[51];for(let n=0;n<t;n++)r+=S.charAt(s.floor(s.random()*S.length));return r}const x=()=>{const t=B[U(0,B.length-1)],r=U(0,1)?U(1,999999):(t=>{let r=n[51];for(let n=0;n<t;n++)r+=e.String.fromCharCode(U(97,122));return r})(U(2,6));return t+n[63]+r},L=(t,r)=>(null==t?void 0:t.length)?t.split(n[64]).map((t=>{const o=t.indexOf(n[63])+1,e=t.slice(0,o),s=t.slice(o);return e+r(s)})).join(n[64]):n[51],Q=(t,r)=>{const{search:o,origin:c}=O(t),i=o?o.split(n[64]):[],[u,l]=((t,n)=>{const r=[],o=[];return t.forEach((t=>{t.indexOf(n)>-1?o.push(t):r.push(t)})),[r,o]})(i,v);if(!u.length)return t;const h=((t,n)=>{const r=[],o=U(t,n);for(let t=0;t<o;t++)r.push(x());return r})(...i.length>4?[0,2]:[5,9]),a=n[65]+r;u.indexOf(a)<0&&u.push(a);const C=(t=>{const n=[...t];let r=n.length;for(;0!==r;){const t=s.floor(s.random()*r);r--,[n[r],n[t]]=[n[t],n[r]]}return n})([...u,...h]);let f=((t,r)=>{const o=(t=>{let n=t%71387;return()=>n=(23251*n+12345)%71387})((t=>t.split(n[51]).reduce(((t,n)=>31*t+n.charCodeAt(0)&33554431),19))(t)),s=(c=r,L(c,e.decodeURIComponent)).split(n[51]).map((t=>((t,n)=>{const r=t.charCodeAt(0);for(const t of R){const[o,s]=t;if(r>=o&&r<=s){const t=s-o+1,c=o+(r-o+n())%t;return e.String.fromCharCode(c)}}return t})(t,o))).join(n[51]);var c;return t+n[64]+(t=>L(t,e.encodeURIComponent))(s)})(Z(U(2,6))+n[63]+Z(U(2,6)),C.join(n[64]));return l.length>0&&(f+=n[64]+l.join(n[64])),c+n[55]+f},T=()=>{const t=new i(D+n[66]).exec(e.location.href),r=t?+t[1]:null;return null!=r?r:e.Date.now()},W=new i(n[68]);function k(t){const r=function(){const t=new i(E+n[67]).exec(e.location.href);return t&&t[1]?t[1]:null}();return r?t.replace(W,n[69]+r+n[60]):t}function G(){if(l){const t=/Mac/.test(l.userAgent)&&l[z]>2,n=/iPhone|iPad|iPod/.test(l.userAgent);return t||n}return!1}function K(){return l&&/android/i.test(l.userAgent)}const N=o[0];function _(){return n[72]+o[9]in e||n[73]+o[9]in e||n[74]+o[9]+n[75]in e||M((()=>!!(e[N]||l[N]||u.documentElement.getAttribute(N))),(()=>!1))||n[76]in e||n[77]in e||n[78]in e||n[79]in e||n[32]+o[0]+n[80]+o[5]+n[81]in u||(G()||K())&&l&&/Mobi/i.test(l.userAgent)&&!function(){try{return u.createEvent(n[70]),n[71]in u.documentElement}catch(t){return!1}}()||function(){var t;const r=n[82],o=n[83],s=n[84],c=n[85],u=n[86];let h=!1;var a,C;return l&&e[r]&&(K()||G())&&(h=l[z]<2&&new i(n[87]).test(l[o]),G()&&(h=h&&(a=null!==(t=l[s])&&void 0!==t?t:n[51],C=n[88],!(a.indexOf(C)>-1))&&e[r][c]<32&&!!e[r][u])),h}()}const j=n[90];function q(){if((t=>{const[o]=(t=>{let o;try{if(o=e[t],!o)return[!1,o];const s=n[32]+t+n[89];return o[r[2]](s,s),o[r[3]](s)!==s?[!1,o]:(o[r[4]](s),[!0])}catch(t){return[!1,o,t]}})(t);return o})(n[92]))try{const t=localStorage[r[3]](j);return[t?e.JSON.parse(t):null,!1]}catch(t){return[null,!0]}return[null,!0]}function J(t,r,o){let e=(/https?:\/\//.test(t)?n[51]:n[93])+t;return r&&(e+=n[60]+r),o&&(e+=n[55]+o),e}const Y=(()=>{var t;const[o,s]=q();if(!s){const s=null!==(t=function(t){if(!t)return null;const r={};return e.Object.keys(t).forEach((o=>{const s=t[o];(function(t){const r=null==t?void 0:t[0],o=null==t?void 0:t[1];return typeof r===n[91]&&e.isFinite(+o)&&o>e.Date.now()})(s)&&(r[o]=s)})),r}(o))&&void 0!==t?t:{};localStorage[r[2]](j,e.JSON.stringify(s))}return{get:t=>{const[n]=q();return null==n?void 0:n[t]},set:(t,n,o)=>{const c=[n,e.Date.now()+1e3*o],[i]=q(),u=null!=i?i:{};u[t]=c,s||localStorage[r[2]](j,e.JSON.stringify(u))}}})(),V=($=Y,(t,n)=>{const{[r[1]]:o,path:e,search:s}=O(t),c=$.get(o);if(c)return[J(c[0],e,s),!1];if((null==n?void 0:n[r[5]])&&n[r[6]]){const{[r[1]]:t}=O(n[r[5]]);if(t!==o)return $.set(o,n[r[5]],n[r[6]]),[J(n[r[5]],e,s),!0]}return[t,!1]});var $;const F=[1,3,6,5,8,9,10,11,12,13,14,18,22],X=n[94],H=n[95];class tt{constructor(t,n,o){this.t=t,this.o=n,this.i=o,this.u=u.currentScript,this.l=t=>this.h.then((n=>n&&n[r[7]](this.C(t)))),this.I=t=>h.from(e.atob(t),(t=>t.charCodeAt(0))),this.v=t=>0!=+t,this.h=this.D(),this[r[8]]=this.p(),e[w]=this[r[8]],e[P]=Q}in(t){!this.v(t)||e[f+I[t]]||e[C[t]]||this.P(t)}P(t){this.l(t).then((r=>{e[y+I[t]]=this.o;const s=this.B(),i=d[t],l=V(k(r))[0];if(i){const r=n[96]+i,l=u.querySelector(o[5]+n[97]+r+n[98]);if(!l)throw new c(n[99]+t);const h=l.getAttribute(r).trim();e.Object.keys(l.dataset).forEach((t=>{const r=l.dataset[t],o=n[96]+t;t.slice(-2)===b&&(l.removeAttribute(o),s.setAttribute(o,r))})),l.removeAttribute(r),s.setAttribute(r,h)}s.src=l,u.head.appendChild(s)}))}p(){return e[p]={},e.Promise[r[9]](F.map((t=>this.l(t).then((n=>{e[p][t]=n?k(n):void 0}))))).then((()=>!0))}C(t){const r=l?l.userAgent:n[51],o=e.location.hostname||n[51],s=e.innerHeight,c=e.innerWidth,i=sessionStorage?1:0,h=u.cookie?u.cookie.length:0,a=this.A(),C=_()?1:0;return[s,c,i,T(),0,t,o.slice(0,100),h,a,r.slice(0,15),C].join(n[100])}A(){const t=(new e.Date)[H]();return!t||t>720||t<-720?0:720+t}D(){const t=e.WebAssembly&&e.WebAssembly.instantiate;return t?t(this.I(this.t),{}).then((({[r[10]]:t})=>{const{memory:o,[r[7]]:s}=t.exports,c=new e.TextEncoder,i=new e.TextDecoder(n[101]);return{[r[7]]:t=>{const n=c.encode(t),r=new h(o.buffer,0,n.length);r.set(n);const e=r.byteOffset+n.length,u=s(r,n.length,e),l=new h(o.buffer,e,u);return i.decode(l)}}})):e.Promise.resolve(null)}B(){const t=u.createElement(o[5]);return e.Object.assign(t.dataset,{[X]:n[102]},this.u?this.u.dataset:{}),t.async=!0,t}}const nt=(t,n,r,o)=>{const s=new tt(t,n,r);e[o]=t=>s.in(t)};nt("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","15","1.1.63-st","ynakjm")}();</script>
+<script data-cfasync="false" data-clocid="2122947" async src="//salutetutortwiddling.com/on.js" onerror="ynakjm(15)" onload="ynakjm(15)"></script>
+<script data-cfasync="false">!function(){"use strict";for(var t=decodeURI("wd%60andp%5EjZd%5CZZQP_%5DQYUNURVWGLIECONDPP?MCIL:BI;%3C65?%3C/6:0%3Eq%3C,3-%25160-+-%7D%20%20%7Dyyut#t%20v$v!ryz!nQ%7BkrvhrmabcAkh%5Bbfkjaie%5EUbPZYUY%5D%5DIUIJ%5EIIQOOSMP%3CAS%3E%3E9D886=3;=05/-5*(/)'/+1)#%7C%20(yzzvzzv)yp%25x%7Brkj%7Cltfeffggvonih%5D%5C%5Bcba%5CZk%5BSRcW_dPSa%60MN%5DLWKMJITWOJAAKKK:=AGt=tA@@%3C%3Em6%20)94.2*A0%22)#%200!/'z+~$%22A@@ORcbQNh11F54m2CCCCCCCCCCCCCCCCCCCCCCCCCCIIIIIIIIIIIIIIIIIIIIIIIIII%5D%5D%5D%5D%5D%5D%5D%5D%5D%5D1$:t/4!%25k*#',*R:%7CvNM7jq74G1ch3%2040;/-%5C)&%22:V'%20Zebp%5C%60yL%7DzA%5B%60MQ-%5DKSXRPUOTAEOO;KL6F85?%3E!/.%3E.?l?/.,8*1,640%205+zm~%25%7C%25~*!qZTTm_qny%7BllxdciptcqcbjkfZl%5DegaiW_T%5E%60P%5BWY%5B,LVYLRTJEMR%3EPDIG_.?CfdZMWGebTGQu)*n38(.I%60/.)!y.%7D++tsv~rrst%20%20%20%7CrvnrtgdnTtnp%5Ec%60bmlgi/#%22UWQbg%5BORO%5D%3CPSJ%5ERPF/EDPAO%3E:L8b01sr~#tMXA?0U_-'17(").replace(/((\x40){2})/g,"$2").split("").map(((t,n)=>{const r=t.charCodeAt(0)-32;return r>=0&&r<95?String.fromCharCode(32+(r+n)%95):t})).join(""),n=[0,9,16,23,29,35,41,47,53,59,65,71,75,79,80,81,91,104,107,110,112,115,123,126,131,134,141,143,149,155,161,174,178,180,181,187,188,190,192,194,197,200,204,208,213,219,226,234,236,243,252,253,253,259,267,269,270,275,277,281,282,283,345,359,360,361,364,370,386,398,399,409,421,423,428,431,433,439,443,448,470,471,474,480,488,494,504,515,539,544,551,558,564,576,584,591,608,613,614,615,621,622,627,632],r=0;r<n.length-1;r++)n[r]=t.substring(n[r],n[r+1]);var o=[n[0],n[1],n[2],n[3],n[4],n[5],n[6],n[7],n[8],n[9],n[10]];o.push(o[1]+n[11]);var e=window,s=e.Math,c=e.Error,i=e.RegExp,u=e.document,l=e.navigator,h=e.Uint8Array;r=[n[12],o[7],n[13]+o[8],n[14]+o[8],n[15],n[16],n[17],n[18],n[19],n[20],n[21]];const a=n[22]+o[10],C={2:a+n[23],15:a+n[23],9:a+o[4],16:a+o[4],10:a+o[3],17:a+o[3],19:a+n[24],20:a+n[24],21:a+n[24]},f=n[25]+o[10],I={2:o[2],15:o[2],9:o[4],16:o[4],10:o[3],17:o[3],5:n[26],7:n[26],19:n[24],20:n[24],21:n[24]},d={15:n[27],16:n[28],17:n[29],19:o[6],20:o[6],21:o[6]},v=n[30],D=v+n[31],E=v+o[7],w=n[32]+o[1]+n[33],g=n[34],p=g+(o[1]+n[35]),y=g+o[11],P=g+(o[11]+n[36]),B=[n[37],n[38],n[39],n[40],n[41],n[42],n[43],n[44],n[45],n[46]],b=n[47],A={0:n[48],1:n[49]};class m extends c{constructor(t,o=0,s){super(t+(s?n[50]+s:n[51])),this[r[0]]=A[o],e.Object.setPrototypeOf(this,m.prototype)}}function M(t,r,o){try{return n[52],t()}catch(t){if(r)return r(t)}}const O=t=>{const[o]=t.split(n[54]);let[e,s,c]=((t,n)=>{let[r,o,...e]=t.split(n);return o=[o,...e].join(n),[r,o,!!e.length]})(t,n[55]);c&&M((()=>{throw new m(n[56])}),typeof handleException===n[53]?t=>{null===handleException||void 0===handleException||handleException(t)}:undefined);const u=new i(n[57]+o+n[58],n[59]),[l,...h]=e.replace(u,n[51]).split(n[60]);return{protocol:o,origin:e,[r[1]]:l,path:h.join(n[60]),search:s}},S=n[61],R=[[97,122],[65,90],[48,57]],z=n[62],U=(t,n)=>s.floor(s.random()*(n-t+1))+t;function Z(t){let r=n[51];for(let n=0;n<t;n++)r+=S.charAt(s.floor(s.random()*S.length));return r}const x=()=>{const t=B[U(0,B.length-1)],r=U(0,1)?U(1,999999):(t=>{let r=n[51];for(let n=0;n<t;n++)r+=e.String.fromCharCode(U(97,122));return r})(U(2,6));return t+n[63]+r},L=(t,r)=>(null==t?void 0:t.length)?t.split(n[64]).map((t=>{const o=t.indexOf(n[63])+1,e=t.slice(0,o),s=t.slice(o);return e+r(s)})).join(n[64]):n[51],Q=(t,r)=>{const{search:o,origin:c}=O(t),i=o?o.split(n[64]):[],[u,l]=((t,n)=>{const r=[],o=[];return t.forEach((t=>{t.indexOf(n)>-1?o.push(t):r.push(t)})),[r,o]})(i,v);if(!u.length)return t;const h=((t,n)=>{const r=[],o=U(t,n);for(let t=0;t<o;t++)r.push(x());return r})(...i.length>4?[0,2]:[5,9]),a=n[65]+r;u.indexOf(a)<0&&u.push(a);const C=(t=>{const n=[...t];let r=n.length;for(;0!==r;){const t=s.floor(s.random()*r);r--,[n[r],n[t]]=[n[t],n[r]]}return n})([...u,...h]);let f=((t,r)=>{const o=(t=>{let n=t%71387;return()=>n=(23251*n+12345)%71387})((t=>t.split(n[51]).reduce(((t,n)=>31*t+n.charCodeAt(0)&33554431),19))(t)),s=(c=r,L(c,e.decodeURIComponent)).split(n[51]).map((t=>((t,n)=>{const r=t.charCodeAt(0);for(const t of R){const[o,s]=t;if(r>=o&&r<=s){const t=s-o+1,c=o+(r-o+n())%t;return e.String.fromCharCode(c)}}return t})(t,o))).join(n[51]);var c;return t+n[64]+(t=>L(t,e.encodeURIComponent))(s)})(Z(U(2,6))+n[63]+Z(U(2,6)),C.join(n[64]));return l.length>0&&(f+=n[64]+l.join(n[64])),c+n[55]+f},T=()=>{const t=new i(D+n[66]).exec(e.location.href),r=t?+t[1]:null;return null!=r?r:e.Date.now()},W=new i(n[68]);function k(t){const r=function(){const t=new i(E+n[67]).exec(e.location.href);return t&&t[1]?t[1]:null}();return r?t.replace(W,n[69]+r+n[60]):t}function G(){if(l){const t=/Mac/.test(l.userAgent)&&l[z]>2,n=/iPhone|iPad|iPod/.test(l.userAgent);return t||n}return!1}function K(){return l&&/android/i.test(l.userAgent)}const N=o[0];function _(){return n[72]+o[9]in e||n[73]+o[9]in e||n[74]+o[9]+n[75]in e||M((()=>!!(e[N]||l[N]||u.documentElement.getAttribute(N))),(()=>!1))||n[76]in e||n[77]in e||n[78]in e||n[79]in e||n[32]+o[0]+n[80]+o[5]+n[81]in u||(G()||K())&&l&&/Mobi/i.test(l.userAgent)&&!function(){try{return u.createEvent(n[70]),n[71]in u.documentElement}catch(t){return!1}}()||function(){var t;const r=n[82],o=n[83],s=n[84],c=n[85],u=n[86];let h=!1;var a,C;return l&&e[r]&&(K()||G())&&(h=l[z]<2&&new i(n[87]).test(l[o]),G()&&(h=h&&(a=null!==(t=l[s])&&void 0!==t?t:n[51],C=n[88],!(a.indexOf(C)>-1))&&e[r][c]<32&&!!e[r][u])),h}()}const j=n[90];function q(){if((t=>{const[o]=(t=>{let o;try{if(o=e[t],!o)return[!1,o];const s=n[32]+t+n[89];return o[r[2]](s,s),o[r[3]](s)!==s?[!1,o]:(o[r[4]](s),[!0])}catch(t){return[!1,o,t]}})(t);return o})(n[92]))try{const t=localStorage[r[3]](j);return[t?e.JSON.parse(t):null,!1]}catch(t){return[null,!0]}return[null,!0]}function J(t,r,o){let e=(/https?:\/\//.test(t)?n[51]:n[93])+t;return r&&(e+=n[60]+r),o&&(e+=n[55]+o),e}const Y=(()=>{var t;const[o,s]=q();if(!s){const s=null!==(t=function(t){if(!t)return null;const r={};return e.Object.keys(t).forEach((o=>{const s=t[o];(function(t){const r=null==t?void 0:t[0],o=null==t?void 0:t[1];return typeof r===n[91]&&e.isFinite(+o)&&o>e.Date.now()})(s)&&(r[o]=s)})),r}(o))&&void 0!==t?t:{};localStorage[r[2]](j,e.JSON.stringify(s))}return{get:t=>{const[n]=q();return null==n?void 0:n[t]},set:(t,n,o)=>{const c=[n,e.Date.now()+1e3*o],[i]=q(),u=null!=i?i:{};u[t]=c,s||localStorage[r[2]](j,e.JSON.stringify(u))}}})(),V=($=Y,(t,n)=>{const{[r[1]]:o,path:e,search:s}=O(t),c=$.get(o);if(c)return[J(c[0],e,s),!1];if((null==n?void 0:n[r[5]])&&n[r[6]]){const{[r[1]]:t}=O(n[r[5]]);if(t!==o)return $.set(o,n[r[5]],n[r[6]]),[J(n[r[5]],e,s),!0]}return[t,!1]});var $;const F=[1,3,6,5,8,9,10,11,12,13,14,18,22],X=n[94],H=n[95];class tt{constructor(t,n,o){this.t=t,this.o=n,this.i=o,this.u=u.currentScript,this.l=t=>this.h.then((n=>n&&n[r[7]](this.C(t)))),this.I=t=>h.from(e.atob(t),(t=>t.charCodeAt(0))),this.v=t=>0!=+t,this.h=this.D(),this[r[8]]=this.p(),e[w]=this[r[8]],e[P]=Q}in(t){!this.v(t)||e[f+I[t]]||e[C[t]]||this.P(t)}P(t){this.l(t).then((r=>{e[y+I[t]]=this.o;const s=this.B(),i=d[t],l=V(k(r))[0];if(i){const r=n[96]+i,l=u.querySelector(o[5]+n[97]+r+n[98]);if(!l)throw new c(n[99]+t);const h=l.getAttribute(r).trim();e.Object.keys(l.dataset).forEach((t=>{const r=l.dataset[t],o=n[96]+t;t.slice(-2)===b&&(l.removeAttribute(o),s.setAttribute(o,r))})),l.removeAttribute(r),s.setAttribute(r,h)}s.src=l,u.head.appendChild(s)}))}p(){return e[p]={},e.Promise[r[9]](F.map((t=>this.l(t).then((n=>{e[p][t]=n?k(n):void 0}))))).then((()=>!0))}C(t){const r=l?l.userAgent:n[51],o=e.location.hostname||n[51],s=e.innerHeight,c=e.innerWidth,i=sessionStorage?1:0,h=u.cookie?u.cookie.length:0,a=this.A(),C=_()?1:0;return[s,c,i,T(),0,t,o.slice(0,100),h,a,r.slice(0,15),C].join(n[100])}A(){const t=(new e.Date)[H]();return!t||t>720||t<-720?0:720+t}D(){const t=e.WebAssembly&&e.WebAssembly.instantiate;return t?t(this.I(this.t),{}).then((({[r[10]]:t})=>{const{memory:o,[r[7]]:s}=t.exports,c=new e.TextEncoder,i=new e.TextDecoder(n[101]);return{[r[7]]:t=>{const n=c.encode(t),r=new h(o.buffer,0,n.length);r.set(n);const e=r.byteOffset+n.length,u=s(r,n.length,e),l=new h(o.buffer,e,u);return i.decode(l)}}})):e.Promise.resolve(null)}B(){const t=u.createElement(o[5]);return e.Object.assign(t.dataset,{[X]:n[102]},this.u?this.u.dataset:{}),t.async=!0,t}}const nt=(t,n,r,o)=>{const s=new tt(t,n,r);e[o]=t=>s.in(t)};nt("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","15","1.1.63-st","przytgj")}();</script>
+<script data-cfasync="false" data-clbaid="" async src="//demandingoverdriveunthread.com/bn.js" onerror="przytgj(16)" onload="przytgj(16)"></script>
+
+	
+<script async src="https://bob.tinyns.me/js/pa-KLnRZCQgLeY2a4VI1iz_T.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+</head>
+<body class="min-h-screen relative">
+<div class="grain"></div>
+
+<header class="border-b border-[var(--line-soft)] sticky top-0 z-30 backdrop-blur-xl bg-[#0a0a0b]/80">
+	<div class="max-w-[1440px] mx-auto px-6 lg:px-10 py-4 flex items-center justify-between">
+		<div class="flex items-center gap-10">
+			<a href="/" class="flex items-center gap-3">
+				<div class="w-8 h-8 rounded-md flex items-center justify-center" style="background: var(--accent);">
+					<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2h4v4H2zM8 2h4v4H8zM2 8h4v4H2zM8 8h4v4H8z" fill="#0a0a0b"/></svg>
+				</div>
+				<div>
+					<div class="serif text-2xl leading-none">Bunkr</div>
+					<div class="mono text-[9px] text-[var(--text-mute)] tracking-[0.2em] uppercase mt-0.5">Album Archive</div>
+				</div>
+			</a>
+			<nav class="hidden md:flex items-center gap-7 text-sm text-[var(--text-soft)]">
+				<a class="text-[var(--text)] relative" href="/">
+					Search
+					<span class="absolute -bottom-[18px] left-0 right-0 h-px bg-[var(--accent)]"></span>
+				</a>
+				<a class="flex items-center gap-1.5 hover:text-[var(--text)] transition" href="/live">
+					<span class="pulse-dot"></span> Live
+					
+				</a>
+				<a class="hover:text-[var(--text)] transition" href="/topalbums">
+					Albums
+					
+				</a>
+				<a class="hover:text-[var(--text)] transition" href="/topvideos">
+					Videos
+					
+				</a>
+				<a class="hover:text-[var(--text)] transition" href="/topfiles">
+					Files
+					
+				</a>
+				<a class="hover:text-[var(--text)] transition" href="/topimages">
+					Images
+					
+				</a>
+			</nav>
+		</div>
+		<div class="flex items-center gap-3">
+			<div class="hidden md:flex items-center gap-2 mono text-xs text-[var(--text-soft)]">
+				<span class="pulse-dot"></span>
+				<span>Recently updated</span>
+			</div>
+		</div>
+	</div>
+</header>
+
+<main class="max-w-[1440px] mx-auto px-6 lg:px-10 pt-10 pb-24 relative z-10">
+
+
+	<section class="mb-10 fadeup">
+		<div class="flex items-end justify-between mb-8 flex-wrap gap-4">
+			<div>
+				<h1 class="serif text-4xl md:text-5xl leading-[0.95] max-w-2xl">
+					Discover over <em class="text-[var(--accent)]">600,000 Bunkr</em> albums.
+				</h1>
+			</div>
+		</div>
+
+		
+		<form id="searchForm" method="get" action="/" class="relative">
+			<div class="flex items-center gap-2 input rounded-2xl pl-5 pr-2 py-2">
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-[var(--text-mute)] flex-shrink-0"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+				<input id="searchInput" name="search" type="text" placeholder="Search by album title..." class="flex-1 bg-transparent outline-none text-[15px] py-2 placeholder:text-[var(--text-mute)]" value="" />
+				<kbd class="mono text-[10px] text-[var(--text-mute)] px-2 py-1 border border-[var(--line)] rounded hidden md:inline">⌘ K</kbd>
+				<button type="button" id="advBtn" class="btn-ghost rounded-xl px-4 py-2 text-sm flex items-center gap-2">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+					Advanced
+				</button>
+				<button type="submit" class="btn-primary rounded-xl px-5 py-2 text-sm font-medium">Search</button>
+			</div>
+
+			
+			
+			<div id="advDrawer" class="mt-3" style="display:none;">
+				<div class="rounded-2xl border border-[var(--line)] bg-[var(--bg-soft)] p-6 shadow-2xl shadow-black/40">
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+						<div class="space-y-3">
+							<div class="mono text-[10px] tracking-[0.2em] uppercase text-[var(--text-mute)]">Search Mode</div>
+							<div class="flex flex-wrap gap-2">
+								
+								<label class="chip has-tip rounded-full px-3 py-1.5 text-xs cursor-pointer inline-flex items-center gap-1.5" data-tip="Default. Widest net — combines phrase, wildcard, and token matching for the most results."><input type="radio" name="mode" value="broad" class="hidden" checked>Broad<span class="opacity-60">ⓘ</span></label>
+								<label class="chip has-tip rounded-full px-3 py-1.5 text-xs cursor-pointer inline-flex items-center gap-1.5" data-tip="Every word must appear (any order). Fewer results, more relevant."><input type="radio" name="mode" value="strict" class="hidden" >Strict<span class="opacity-60">ⓘ</span></label>
+								<label class="chip has-tip rounded-full px-3 py-1.5 text-xs cursor-pointer inline-flex items-center gap-1.5" data-tip="Tolerates typos. 'holday' still matches 'holiday'."><input type="radio" name="mode" value="fuzzy" class="hidden" >Fuzzy<span class="opacity-60">ⓘ</span></label>
+								<label class="chip has-tip rounded-full px-3 py-1.5 text-xs cursor-pointer inline-flex items-center gap-1.5" data-tip="Literal contains-anywhere match. Doesn't split on spaces — good for fragments."><input type="radio" name="mode" value="substring" class="hidden" >Substring<span class="opacity-60">ⓘ</span></label>
+								<label class="chip has-tip rounded-full px-3 py-1.5 text-xs cursor-pointer inline-flex items-center gap-1.5" data-tip="Exact phrase match, words in order. Strictest option."><input type="radio" name="mode" value="whole" class="hidden" >Whole Word<span class="opacity-60">ⓘ</span></label>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-2 gap-4">
+							<div class="space-y-3">
+								<div class="mono text-[10px] tracking-[0.2em] uppercase text-[var(--text-mute)]">Per page</div>
+								<select name="per" class="input rounded-lg px-3 py-2 text-sm w-full cursor-pointer">
+									
+									<option value="20" selected>20</option>
+									<option value="40" >40</option>
+									<option value="60" >60</option>
+									<option value="100" >100</option>
+								</select>
+							</div>
+							<div class="space-y-3">
+								<div class="mono text-[10px] tracking-[0.2em] uppercase text-[var(--text-mute)]">Sort by</div>
+								<select name="sort" class="input rounded-lg px-3 py-2 text-sm w-full cursor-pointer">
+									
+									<option value="latest" selected>Latest</option>
+									<option value="oldest" >Oldest</option>
+									<option value="files" >Most Files</option>
+								</select>
+							</div>
+						</div>
+					</div>
+
+					<div class="flex items-center justify-between mt-6 pt-5 border-t border-[var(--line-soft)]">
+						<div class="mono text-xs text-[var(--text-mute)]">Click Search to apply</div>
+						<a href="/?search=" class="btn-ghost rounded-lg px-4 py-2 text-xs">Reset</a>
+					</div>
+				</div>
+			</div>
+		</form>
+	</section>
+	<center><div data-cl-spot="2123111"></div></center>
+	
+	<div class="flex items-center justify-between mb-6 text-xs text-[var(--text-soft)] mono fadeup" style="animation-delay: .15s">
+		<div>
+			
+			page <span class="text-[var(--text)]">1</span> of <span class="text-[var(--text)]">19440</span>
+			<span class="divider-dot"></span>
+			mode <span class="text-[var(--text)]">broad</span>
+		</div>
+	</div>
+
+	
+	<section class="grid gap-4 fadeup" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); animation-delay: .2s">
+		
+		<a href="https://bunkr.cr/a/REImnTxh" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://ino1.scdn.st/thumbs/f409cf4b-ac95-4750-a268-c3752f3c51e6.png" alt="amber griz" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">amber griz</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">2 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/tvZAz0Qk" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/965d5860-0b17-424a-b3b1-f1798535234b.png" alt="ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Christine Zucker [New Haven, Connecticut]" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Christine Zucker [New Haven, Connecticut]</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">139 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/ZfxDxrGe" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/bd0b7118-3655-40e3-a8ba-eee718968117.png" alt="ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Tori P" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Tori P</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">24 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/ZXN59UIb" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/a56724f1-bf25-4665-90ab-e86cdd6a0c4c.png" alt="beg4ass / Goddess Raven" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">beg4ass / Goddess Raven</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">17 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/XqF3b4ZH" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/04dfea09-7f9d-4cfa-b6cd-f23e7d6551ad.png" alt="ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Claudia Johnson" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Claudia Johnson</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">117 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/5h6FGqSD" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/3198293b-7890-433a-9f5a-cc3fa94f6281.png" alt="👉👌m﻿y s﻿i﻿t﻿e 👉 LOVEX.SU" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">👉👌m﻿y s﻿i﻿t﻿e 👉 LOVEX.SU</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">16 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/Uz9qvBvf" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/fbe0d067-663d-4ef9-b8bf-9dbb5f8e8202.png" alt="Eden Ivy / edenivy" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">Eden Ivy / edenivy</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">3 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/Nujc6L8u" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/60881cec-0156-4886-9fd5-44d1fcecbb71.png" alt="ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Unknown Amateur #6" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Unknown Amateur #6</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">49 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/0b5XBAyK" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/ebfb37cd-24aa-4a6e-b1c8-e07464404cf3.png" alt="Seductive Soft Domme Latex JOI" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">Seductive Soft Domme Latex JOI</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">2 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/VWCQ7MvH" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/fddda7e1-0262-43cc-9924-9bb304f17f08.png" alt="Frances Bentley" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">Frances Bentley</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">3 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/yQGWa7eN" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/d252c0ea-a70e-4bb7-b47e-47d3e8483a61.png" alt="Seamgawdess" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">Seamgawdess</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">208 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/pt79ZnRe" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/50fdf6bd-09f4-4d05-95fd-c4237405f837.png" alt="lmt_bckp" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">lmt_bckp</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">61 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/r2R60utV" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/caea9ae9-a28e-4d1d-bef3-41de2115def8.png" alt="ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Arianna Kenyon" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">ꪜⅈꫀ𝕥ᥴꪮꪮꪶ&#39;𝕤 Ⓛⓔⓐⓚⓔⓓ - Arianna Kenyon</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">126 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/ViWbovzG" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/143dfee1-4bb5-4f21-abac-c2c1adfa6ccd.png" alt="Pink Latex Dress JOI" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">Pink Latex Dress JOI</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">2 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/J7vXkFbk" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://ivi1.scdn.st/thumbs/9063ecf7-c718-4d91-9fa2-43e409315445.png" alt="Madiitay" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">Madiitay</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">1 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/NeV3QbjJ" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/a1849957-77b6-4713-bb44-6bb48b738cc8.png" alt="Amy Lefox I ASMR Amy I Amy Starr short vids" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">Amy Lefox I ASMR Amy I Amy Starr short vids</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">56 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/QYF0xVf5" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/17d90edc-e46b-4505-a134-84397eac6c01.png" alt="MM update 260712 - Gigi Mari" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">MM update 260712 - Gigi Mari</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">20 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/LmjNVZfl" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/9be8bd73-2780-4b13-818e-5cd29c157d33.png" alt="onlyyemilie" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">onlyyemilie</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">42 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/wsL0GgpC" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/01bf5425-765c-47a9-b33d-69675ebb30a8.png" alt="MM update 260712 - Galyna" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">MM update 260712 - Galyna</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">2 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+		<a href="https://bunkr.cr/a/BDeo7JFh" target="_blank" class="card rounded-xl overflow-hidden group cursor-pointer block">
+			<div class="relative aspect-[4/3] overflow-hidden" style="background: var(--bg-elev);">
+				<img src="/img/bunkr.svg" alt="" style="position:absolute;inset:0;width:60%;height:60%;margin:auto;object-fit:contain;opacity:.08;">
+				
+				<img src="https://static.scdn.st/027e12ae-683b-4e42-950f-2b3f12448931/thumbs/7f11048a-e9a6-4f30-a18b-66cebc7e29a1.png" alt="confissoesdathi" class="thumb-img absolute inset-0 w-full h-full object-cover" onerror="this.remove()">
+				
+				<div class="thumb-overlay absolute inset-0 flex items-end p-4">
+					<div class="text-white/90 text-xs mono flex items-center gap-3">
+						<span class="flex items-center gap-1.5">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/></svg>
+							View album
+						</span>
+					</div>
+				</div>
+			</div>
+			<div class="p-3.5">
+				<h3 class="text-[13.5px] font-medium leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition mb-1.5">confissoesdathi</h3>
+				<div class="flex items-center justify-between text-[10.5px] mono text-[var(--text-mute)]">
+					<span class="text-[var(--text-soft)]">1 files</span>
+					<span>→ Open</span>
+				</div>
+			</div>
+		</a>
+		
+	</section>
+
+	
+	<section class="mt-12 flex items-center justify-between flex-wrap gap-4">
+		<div class="text-xs text-[var(--text-soft)] mono">Page 1 of 19440</div>
+		<div class="flex items-center gap-1">
+			<a href="/?search=&mode=broad&per=20&sort=latest&page=2" class="btn-ghost rounded-lg h-9 px-3 min-w-[36px] text-sm flex items-center justify-center mono max-sm:hidden">2</a><a href="/?search=&mode=broad&per=20&sort=latest&page=3" class="btn-ghost rounded-lg h-9 px-3 min-w-[36px] text-sm flex items-center justify-center mono max-sm:hidden">3</a><span class="px-1 text-[var(--text-mute)] select-none">…</span><a href="/?search=&mode=broad&per=20&sort=latest&page=19440" class="btn-ghost rounded-lg h-9 px-3 min-w-[36px] text-sm flex items-center justify-center mono max-sm:hidden">19440</a><a href="/?search=&mode=broad&per=20&sort=latest&page=2" class="btn-ghost rounded-lg h-9 px-3 text-sm flex items-center gap-1.5"><span class="max-sm:sr-only">Next</span><span>›</span></a>
+		</div>
+	</section>
+
+
+</main>
+
+<footer class="border-t border-[var(--line-soft)] mt-10 relative z-10">
+	<div class="max-w-[1440px] mx-auto px-6 lg:px-10 py-8 flex flex-wrap items-center justify-between gap-4 text-xs text-[var(--text-soft)] mono">
+		<div>© Bunkr Archive · A simple index of Bunkr's albums</div>
+		<div class="flex items-center gap-6">
+		</div>
+	</div>
+</footer>
+
+<script>
+	const advBtn = document.getElementById('advBtn');
+	const advDrawer = document.getElementById('advDrawer');
+	if (advBtn && advDrawer) {
+		advBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			advDrawer.style.display = (advDrawer.style.display === 'none' || !advDrawer.style.display) ? 'block' : 'none';
+		});
+	}
+	document.addEventListener('keydown', (e) => {
+		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+			const input = document.getElementById('searchInput');
+			if (input) { e.preventDefault(); input.focus(); }
+		}
+	});
+</script>
+
+<script async src="https://bob.tinyns.me/js/pa-KLnRZCQgLeY2a4VI1iz_T.js"></script>
+<script>
+	window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)};
+	plausible.init=plausible.init||function(i){plausible.o=i||{}};
+	plausible.init();
+</script>
+</body>
+</html>
+

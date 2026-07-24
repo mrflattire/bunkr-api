@@ -1,0 +1,18 @@
+GET https://c4s5-b.cdn.cr/storage/media/a5eca49b-10e4-4607-9174-3a5ec6fb79f1.mp4?n=Snowbunny+has+the+BIGGEST+all+natural+ass%21.mp4&token=21bb5a157f58bf8e33c1717783c1153e5aa73da8&ex=1783710230 HTTP/1.1
+Host: c4s5-b.cdn.cr
+Connection: keep-alive
+sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Brave";v="150"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8
+Sec-GPC: 1
+Accept-Language: en-US,en;q=0.7
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Referer: https://dl.bunkr.cr/
+Accept-Encoding: gzip, deflate, br, gzip
+

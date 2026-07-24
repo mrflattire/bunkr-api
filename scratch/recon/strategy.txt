@@ -1,0 +1,17 @@
+GET https://c4s5-b.cdn.cr/storage/media/a5eca49b-10e4-4607-9174-3a5ec6fb79f1.mp4?n=Snowbunny+has+the+BIGGEST+all+natural+ass%21.mp4&token=21bb5a157f58bf8e33c1717783c1153e5aa73da8&ex=1783710230
+```[cite: 19]
+
+* **`n=`**: Appends the raw, URL-encoded original filename (`Snowbunny+has+the+BIGGEST...`)[cite: 19] so your browser or command-line downloader automatically names the file properly on disk instead of saving it as a random UUID string.
+* **`token=` and `ex=`**: Appends the single-use authorization keys to bypass the CDN edge block[cite: 19, 20].
+
+---
+
+### The Automation Blueprint
+Because you noticed that correlation, your scraper script can choose between two highly stable paths depending on how you want to handle it:
+
+| Strategy | Step 1 | Step 2 | Step 3 | Step 4 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Route A (Player-Page)** | Parse `/f/[slug]` page[cite: 11] | Grab `jsCDN` & `signUrl` variables directly[cite: 11] | Fetch token from sign URL[cite: 11] | Download immediately[cite: 11] |
+| **Route B (Dedicated Download)** | Grab file ID from the HTML or page transition[cite: 15] | `POST` `{"id": "..."}` to `/api/_001_v2`[cite: 15, 18] | Fetch token using path from metadata response[cite: 15] | Download with original name (`?n=`)[cite: 15, 19] |
+
+Both routes terminate at the exact same storage CDN server (`c4s5-b.cdn.cr`)[cite: 11, 17, 19], but Route B gives you the added bonus of the original filename out of the box[cite: 17, 19].

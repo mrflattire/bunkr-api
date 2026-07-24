@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+Server: Angie
+Date: Fri, 10 Jul 2026 17:03:51 GMT
+Content-Type: application/json
+Content-Length: 69
+Connection: keep-alive
+Access-Control-Allow-Headers: Content-Type
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Origin: https://dl.bunkr.cr
+Cache-Control: no-store
+Vary: Origin
+
+{"ex":1783710230,"token":"21bb5a157f58bf8e33c1717783c1153e5aa73da8"}
