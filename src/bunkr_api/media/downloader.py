@@ -1,4 +1,4 @@
-# src/album_manager/media/downloader.py
+# src/bunkr_api/media/downloader.py
 import os
 import re
 import sys
@@ -7,18 +7,20 @@ import shutil
 import asyncio
 import threading
 import subprocess
+import json
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 from rich.console import Console
 from rich.progress import (
     Progress, TextColumn, BarColumn, TaskProgressColumn, 
     DownloadColumn, TransferSpeedColumn
 )
+from rich.prompt import Prompt
 
 # Internal Package Imports
 from ..config import DEFAULT_OUTPUT_DIR, HEADERS
-from ..utils.formatting import sanitize_filename_simple, get_album_folder_name
+from ..utils.formatting import sanitize_filename_simple, get_album_folder_name, clean_dragged_path, parse_selection
 from ..core.tokens import mint_single_url_async
 
 console = Console()
@@ -49,7 +51,6 @@ class DownloadEngine:
         if db_id: self.db.update_download_status(db_id, "DOWNLOADING")
 
         safe_name = sanitize_filename_simple(title)
-        # Handle cases where asset_data keys might be slightly different
         album_id = asset_data.get("album_id") or "0"
         album_title = asset_data.get("album_title") or "Unknown"
         
@@ -59,9 +60,9 @@ class DownloadEngine:
 
         ytdlp_cmd = [
             "yt-dlp", "--no-playlist", "--newline", "--continue",
-            "--retries", "10", "--socket-timeout", "30",
-            "--referer", HEADERS["Referer"],
-            "--add-header", f"Origin:{HEADERS['Origin']}",
+            "--retries", "50", "--fragment-retries", "10", "--retry-sleep", "5",
+            "--referer", "https://bunkr.cr/",
+            "--add-header", f"Origin:https://bunkr.cr",
             "--add-header", f"User-Agent:{HEADERS['User-Agent']}",
             "--progress-template", "download:PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s",
             "-o", str(dest), cdn_url
@@ -70,9 +71,7 @@ class DownloadEngine:
         progress.update(task_id, description=f"[Worker {slot_id + 1}] {safe_name[:25]}", completed=0, total=None)
 
         try:
-            # Set creationflags to handle signals properly on Windows
             c_flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-            
             proc = subprocess.Popen(
                 ytdlp_cmd, 
                 stdout=subprocess.PIPE, 
@@ -85,15 +84,16 @@ class DownloadEngine:
             with self.active_processes_lock:
                 self.active_processes[slot_id] = proc
 
-            for line in proc.stdout:
-                if self.shutdown_event.is_set():
-                    break
-                if line.startswith("PROGRESS "):
-                    parts = line.split()
-                    if len(parts) == 3:
-                        try:
-                            progress.update(task_id, completed=int(parts[1]), total=int(parts[2]))
-                        except: pass
+            if proc.stdout:
+                for line in proc.stdout:
+                    if self.shutdown_event.is_set():
+                        break
+                    if line.startswith("PROGRESS "):
+                        parts = line.split()
+                        if len(parts) == 3:
+                            try:
+                                progress.update(task_id, completed=int(parts[1]), total=int(parts[2]))
+                            except: pass
 
             proc.wait()
             
@@ -103,16 +103,17 @@ class DownloadEngine:
 
             if proc.returncode == 0:
                 progress.console.print(f"[green][+][/green] Finished: {safe_name}")
-                if db_id: self.db.update_download_status(db_id, "COMPLETED", str(dest))
+                if db_id: 
+                    self.db.update_download_status(db_id, "COMPLETED", str(dest))
+                    with self.db.connection() as conn:
+                        conn.execute("UPDATE assets SET is_staged = 0 WHERE id = ?;", (db_id,))
                 return True
             else:
-                progress.console.print(f"[red][-] Failed: {safe_name} (Code {proc.returncode})[/red]")
                 if db_id: self.db.update_download_status(db_id, "FAILED", error=f"Exit code {proc.returncode}")
                 return False
                 
         except Exception as e:
             if not self.shutdown_event.is_set():
-                progress.console.print(f"[red][-][/red] Error {safe_name}: {e}")
                 if db_id: self.db.update_download_status(db_id, "FAILED", error=str(e))
             return False
         finally:
@@ -125,7 +126,9 @@ class DownloadEngine:
         now = time.time()
         needed = [a for a in assets if not a.get("signed_cdn_url") or (a.get("token_expiry_timestamp") or 0) < now + 120]
         
-        if not needed: return
+        if not list(filter(lambda x: x.get('db_asset_id'), needed)):
+            return
+            
         console.print(f"[*] Pre-minting [cyan]{len(needed)}[/cyan] download tokens...")
         
         sem = asyncio.Semaphore(4)
@@ -134,16 +137,20 @@ class DownloadEngine:
                 try:
                     fid = str(a.get("true_file_id") or a.get("slug_id"))
                     url = await mint_single_url_async(session, fid)
-                    self.db.update_asset_url(a["id"], url)
+                    self.db.update_asset_url(a["db_asset_id"], url)
                 except: pass
                 
         async with AsyncSession(impersonate="chrome") as session:
             await asyncio.gather(*[worker(session, a) for a in needed])
 
     def run(self, files_list, workers=1, output_dir=DEFAULT_OUTPUT_DIR):
-        """The main loop with graceful KeyboardInterrupt handling."""
+        """The main execution loop for the engine."""
         self.shutdown_event.clear()
         
+        if not shutil.which("yt-dlp"):
+            console.print("[red][-][/red] Error: 'yt-dlp' was not found in your system PATH.")
+            return
+
         # 1. Async token prep
         loop_f = asyncio.SelectorEventLoop if sys.platform == 'win32' else None
         if loop_f:
@@ -166,10 +173,9 @@ class DownloadEngine:
                 futures = []
                 slots = list(range(workers))
                 task_iterator = iter(files_list)
-                active_map = {} # future -> slot_id
+                active_map = {} 
 
                 while True:
-                    # Fill available slots
                     while slots:
                         try:
                             asset = next(task_iterator)
@@ -186,8 +192,7 @@ class DownloadEngine:
                     if not futures:
                         break
 
-                    # Wait for at least one to finish, timeout=1.0 allows Ctrl+C to break in
-                    done, not_done = wait(futures, timeout=1.0, return_when=FIRST_COMPLETED)
+                    done, _ = wait(futures, timeout=1.0, return_when=FIRST_COMPLETED)
                     
                     for f in done:
                         futures.remove(f)
@@ -197,18 +202,184 @@ class DownloadEngine:
 
         except KeyboardInterrupt:
             self.shutdown_event.set()
-            console.print("\n[bold yellow][!] Interrupt detected. Cleaning up processes...[/bold yellow]")
-            
-            # Kill all active yt-dlp subprocesses
+            console.print("\n[bold yellow][!] Interrupt detected. Cleaning up...[/bold yellow]")
             with self.active_processes_lock:
                 for proc in self.active_processes.values():
-                    try:
-                        proc.terminate()
+                    try: proc.terminate()
                     except: pass
-            
             executor.shutdown(wait=False, cancel_futures=True)
-            console.print("[bold green][+][/bold green] Cleanup complete. Returning to menu.")
-            # Small delay to let the terminal clear the progress lines
             time.sleep(1)
         finally:
             executor.shutdown(wait=True)
+
+def prompt_for_inputs(db):
+    """Restored: Interactive catalog browser from original download.py."""
+    db_albums = []
+    try:
+        db_albums = db.get_all_albums() or []
+    except Exception as e:
+        console.print(f"[bold red][-][/bold red] Warning: Could not query DB catalog: {e}")
+
+    console.print()
+    if db_albums:
+        console.print("[bold magenta][*] Discovered Albums Cataloged in DB:[/bold magenta]")
+        for idx, album in enumerate(db_albums, start=1):
+            album_dict = dict(album)
+            staged_flag = " [bold green][STAGED][/bold green]" if album_dict.get('is_staged') == 1 else ""
+            console.print(f"  [cyan]{idx:2d}[/cyan] • [yellow]{album_dict['title']}[/yellow] ({album_dict['file_count']} items){staged_flag} [dim](DB ID: {album_dict['id']})[/dim]")
+        console.print()
+
+    console.print("[dim]Special keywords: 'staged' (all staged) | 'triage' (failed items)[/dim]")
+    try:
+        raw = Prompt.ask("[bold cyan][?][/bold cyan] Choose a record number, drop a fresh JSON path, or 'q' to exit").strip()
+    except KeyboardInterrupt:
+        sys.exit(0)
+
+    if raw.lower() in ('q', 'quit', 'exit'):
+        sys.exit(0)
+
+    if raw.lower() == 'staged':
+        return None, None, None, prompt_for_workers(), True, False
+    if raw.lower() == 'triage':
+        return None, None, None, prompt_for_workers(), False, True
+
+    raw = clean_dragged_path(raw)
+    input_path, db_id = None, None
+
+    if raw.isdigit():
+        num_val = int(raw)
+        if db_albums and 1 <= num_val <= len(db_albums):
+            db_id = db_albums[num_val - 1]["id"]
+            console.print(f"[*] Resolved selection: [yellow]{db_albums[num_val - 1]['title']}[/yellow]")
+        else:
+            db_id = num_val
+    else:
+        candidate = Path(raw).expanduser()
+        if candidate.exists() and candidate.is_file():
+            input_path = candidate
+        else:
+            console.print("[bold red][-][/bold red] Selection not recognized.")
+            sys.exit(1)
+
+    selection = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](Enter for ALL)[/dim]").strip()
+    if not selection:
+        selection = 'all'
+    
+    workers = prompt_for_workers()
+    return input_path, db_id, selection, workers, False, False
+
+def prompt_for_workers() -> int:
+    workers_input = Prompt.ask("[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5)", default="1").strip()
+    try:
+        return min(5, max(1, int(workers_input)))
+    except ValueError:
+        return 1
+
+def main():
+    """Standalone CLI entry point for 'bunkr-download'."""
+    import argparse
+    from ..core.db import DatabaseManager
+
+    parser = argparse.ArgumentParser(description="Bunkr Standalone Downloader CLI")
+    parser.add_argument('-i', '--input', type=str, help="Legacy JSON path")
+    parser.add_argument('--db-id', type=int, help="Database ID")
+    parser.add_argument('-w', '--workers', type=int, help="Worker concurrency")
+    parser.add_argument('-n', '--number', type=str, help="Item selection")
+    parser.add_argument('-o', '--output', type=str, help="Output directory")
+    parser.add_argument('--staged', action='store_true', help="Process staged items")
+    parser.add_argument('--triage', action='store_true', help="Process failed items")
+    args = parser.parse_args()
+
+    db = DatabaseManager()
+    engine = DownloadEngine(db)
+    
+    input_json_path = args.input
+    db_id = args.db_id
+    selection_arg = args.number
+    workers = args.workers
+    run_staged = args.staged
+    run_triage = args.triage
+
+    # Interactive Fallback
+    if not any([db_id, input_json_path, run_staged, run_triage]) and len(sys.argv) == 1:
+        input_json_path, db_id, selection_arg, workers, run_staged, run_triage = prompt_for_inputs(db)
+
+    if not workers: workers = 1
+    
+    files_list = []
+
+    if run_staged:
+        console.print("[bold cyan][*] Extracting all staged files...[/bold cyan]")
+        assets = db.get_all_albums() # Dummy fetch to use connection
+        with db.connection() as conn:
+            rows = conn.execute("""
+                SELECT a.*, al.title AS album_title FROM assets a
+                LEFT JOIN albums al ON a.album_id = al.id
+                WHERE a.is_staged = 1 OR al.is_staged = 1
+                ORDER BY a.album_id, a.track_number ASC;
+            """).fetchall()
+            for r in rows:
+                d = dict(r)
+                d['db_asset_id'] = d['id']
+                files_list.append(d)
+
+    elif run_triage:
+        console.print("[bold red][*] Auto-Triage: Retrying failed downloads...[/bold red]")
+        with db.connection() as conn:
+            rows = conn.execute("""
+                SELECT a.*, al.title AS album_title FROM assets a
+                LEFT JOIN albums al ON a.album_id = al.id
+                WHERE a.download_status = 'FAILED'
+                ORDER BY a.album_id, a.track_number ASC;
+            """).fetchall()
+            for r in rows:
+                d = dict(r)
+                d['db_asset_id'] = d['id']
+                files_list.append(d)
+
+    elif db_id:
+        with db.connection() as conn:
+            album = conn.execute("SELECT * FROM albums WHERE id=?", (db_id,)).fetchone()
+            if not album:
+                console.print(f"[red][!] Album {db_id} not found.[/red]")
+                return
+            assets = db.get_album_assets(db_id)
+            for a in assets:
+                d = dict(a)
+                d['db_asset_id'] = d['id']
+                d['album_title'] = album['title']
+                d['album_id'] = album['id']
+                files_list.append(d)
+
+    elif input_json_path:
+        with open(input_json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        meta = data.get("selected_album", {})
+        for item in data.get("files_found", []):
+            files_list.append({
+                "db_asset_id": None,
+                "album_id": meta.get("album_index_number", "legacy"),
+                "album_title": meta.get("title", "unknown"),
+                "title": item.get("original") or item.get("title"),
+                "signed_cdn_url": item.get("signed_cdn_url"),
+                "true_file_id": item.get("true_file_id")
+            })
+
+    if not files_list:
+        console.print("[yellow][!] No targets available.[/yellow]")
+        return
+
+    # Filter selection
+    if selection_arg and selection_arg != 'all':
+        try:
+            indices = parse_selection(selection_arg, len(files_list))
+            files_list = [files_list[i-1] for i in indices]
+        except Exception as e:
+            console.print(f"[red][!] Selection error: {e}[/red]")
+            return
+
+    out_dir = Path(args.output).expanduser() if args.output else DEFAULT_OUTPUT_DIR
+    engine.run(files_list, workers=workers, output_dir=out_dir)
+
+if __name__ == "__main__":
+    main()

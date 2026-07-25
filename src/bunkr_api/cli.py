@@ -27,6 +27,29 @@ from .config import SEARCH_MODES, SORT_TYPES, TOP_CATEGORIES, VALID_COUNTS
 console = Console()
 db = DatabaseManager()
 
+def show_interactive_options(album_id, page_assets, start_idx, total_pages, current_page, total_items):
+    """Provides a prompt lifecycle allowing hands-free secondary script operations."""
+    has_expired_tokens = False
+    for asset in page_assets:
+        token_status = parse_and_check_expiry(asset["token_expiry_timestamp"])
+        if "Expired" in token_status:
+            has_expired_tokens = True
+            break
+
+    minter_style = " [bold red blink]5. Mint new tokens (⚠️ EXPIRED)[/bold red blink]" if has_expired_tokens else " [bold white]5.[/bold white] Mint new tokens"
+
+    console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
+    console.print(f" Navigation -> [bold white]n[/bold white]: Next Page | [bold white]p[/bold white]: Prev Page")
+    console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 3,7,12 | 1-5 | staged | Enter for ALL)[/dim]")
+    console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
+    console.print(" [bold white]3.[/bold white] Download ALL assets in this album")
+    console.print(" [bold white]4.[/bold white] Copy link to stdout")
+    console.print(f"{minter_style} [dim](Manual batch refresh with feedback)[/dim]")
+    console.print(" [bold white]6.[/bold white] Stage/Unstage assets [dim](1: Album | 2: Assets)[/dim]")
+    console.print(" [bold white]q.[/bold white] Exit this stage")
+    
+    return Prompt.ask("\n[bold cyan][?][/bold cyan] Choose option", choices=["1", "2", "3", "4", "5", "6", "n", "p", "q"], default="q").lower()
+
 def show_album_details(album_id):
     """
     Restored: The full detailed Dashboard with all original 7 actions.
@@ -83,18 +106,15 @@ def show_album_details(album_id):
         
         console.print(table)
         
-        # 4. Action Menu
-        console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
-        console.print(f" Navigation -> [bold white]n[/bold white]: Next Page | [bold white]p[/bold white]: Prev Page")
-        console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 3,7,12 | 1-5 | staged | Enter for ALL)[/dim]")
-        console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
-        console.print(" [bold white]3.[/bold white] Download ALL assets in this album")
-        console.print(" [bold white]4.[/bold white] Copy link to stdout")
-        console.print(" [bold white]5.[/bold white] Mint new tokens [dim](Manual batch refresh with feedback)[/dim]")
-        console.print(" [bold white]6.[/bold white] Stage/Unstage assets [dim](1: Album | 2: Assets)[/dim]")
-        console.print(" [bold white]q.[/bold white] Exit this stage")
-        
-        act = Prompt.ask("\n[bold cyan][?][/bold cyan] Choose option", choices=["1", "2", "3", "4", "5", "6", "n", "p", "q"], default="q").lower()
+        # 4. Action Menu via show_interactive_options
+        act = show_interactive_options(
+            album_id=album_id,
+            page_assets=page_assets,
+            start_idx=start,
+            total_pages=total_pages,
+            current_page=current_page,
+            total_items=total_items
+        )
 
         if act == 'q': break
         if act == 'n' and current_page < total_pages: current_page += 1; continue
@@ -314,12 +334,12 @@ def main_loop():
         albums = db.get_all_albums()
         console.print("\n[bold magenta][*] Discovered Albums Cataloged in DB:[/bold magenta]")
         if not albums:
-            console.print("[dim]  (No records cataloged yet)[/dim]")
+            console.print("[dim]  (No albums cataloged yet)[/dim]")
         else:
             for i, a in enumerate(albums, start=1):
                 a_dict = dict(a)
                 staged = " [bold green][STAGED][/bold green]" if a_dict.get('is_staged') else ""
-                console.print(f"  [bold cyan]{i:2d}[/bold cyan] • {a_dict['title']} ({a_dict['file_count']} items){staged} [dim white](DB ID: {a_dict['id']})[/dim white]")
+                console.print(f"  [bold cyan]{i:2d}[/bold cyan] • [yellow]{a_dict['title']}[/yellow] ({a_dict['file_count']} items){staged} [dim white](DB ID: {a_dict['id']})[/dim white]")
 
         console.print()
         console.print(" [bold white]s.[/bold white] Search for or discover a new album")
@@ -356,7 +376,7 @@ def main_loop():
             continue
         
         if cmd == 'd':
-            del_spec = Prompt.ask("[bold red][?][/bold red] Album number(s) to delete")
+            del_spec = Prompt.ask("[bold red][?][/bold red] Album number(s) to delete — single, comma list, or range (or Enter to nuke all)")
             try:
                 indices = parse_selection(del_spec, len(albums))
                 target_ids = [albums[idx-1]['id'] for idx in indices]

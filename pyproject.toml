@@ -3,8 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bunkr_api"
-version = "1.0.0"
+name = "bunkr-api"
+version = "0.1.0"
+description = "Interactive Python API wrapper for Bunkr"
 dependencies = [
     "rich",
     "curl_cffi",
@@ -12,6 +13,14 @@ dependencies = [
     "yt-dlp",
     "urllib3"
 ]
+
+[project.scripts]
+bunkr-api = "bunkr_api.cli:main_loop"
+bunkr-scrape = "bunkr_api.core.scraper:main"
+bunkr-stream = "bunkr_api.media.player:main"
+bunkr-mint = "bunkr_api.core.tokens:main"
+bunkr-download = "bunkr_api.media.downloader:main"
+bunkr-inspect = "bunkr_api.inspector:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

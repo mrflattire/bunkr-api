@@ -176,3 +176,11 @@ def daemon_loop(album_id: int = None):
             if album_id:
                 break
             time.sleep(10)
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Token Refresh Utility")
+    parser.add_argument('--album-id', type=int, help="Target a specific album")
+    args = parser.parse_args()
+    daemon_loop(album_id=args.album_id)

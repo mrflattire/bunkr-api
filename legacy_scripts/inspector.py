@@ -26,6 +26,12 @@ Usage:
     # its album staged, and vice versa doesn't show here as a diff view).
     python inspector.py --staged
 
+    # Everything about ONE album — its own record + every asset, dumped in
+    # full (untruncated URLs, same flat style as --table). --albums summarizes
+    # across every album; --table assets --all dumps every album's assets
+    # together with no way to isolate one; this fills that gap.
+    python inspector.py --db-id 11
+
     # Dashboard (zero args only — any flag at all skips it in favor of the
     # standard table dump). Shows row counts + pipeline metrics per table.
     # The "Staged" metrics need an is_staged column that doesn't ship with
@@ -233,6 +239,40 @@ def display_albums_breakdown(conn: sqlite3.Connection):
     console.print(t)
 
 
+def display_album_detail(conn: sqlite3.Connection, album_id: int):
+    """
+    Everything about ONE album: its own record, plus every asset belonging
+    to it, dumped in full (not truncated/tabulated — same reasoning as
+    print_rows: long signed_cdn_url values need to stay readable and
+    copy-paste intact, not wrapped or repr-quoted). Fills a real gap —
+    --albums summarizes across every album, --table assets --all dumps
+    every album's assets together with no way to isolate just one.
+    """
+    album = conn.execute("SELECT * FROM albums WHERE id = ?;", (album_id,)).fetchone()
+    if not album:
+        console.print(f"[bold red][-][/bold red] No album found with id {album_id}.")
+        return
+
+    console.print(f"[bold magenta]Album #{album['id']}[/bold magenta]")
+    for key in album.keys():
+        console.print(f"  [dim]{key}:[/dim] {album[key]}", soft_wrap=True, highlight=False)
+
+    assets = conn.execute(
+        "SELECT * FROM assets WHERE album_id = ? ORDER BY track_number ASC;", (album_id,)
+    ).fetchall()
+
+    if not assets:
+        console.print(f"\n[dim](no assets for album {album_id})[/dim]")
+        return
+
+    console.print(f"\n[bold magenta]{len(assets)} asset(s):[/bold magenta]")
+    for row in assets:
+        console.print(f"[bold cyan]--- id={row['id']} ---[/bold cyan]")
+        for key in row.keys():
+            console.print(f"  [dim]{key}:[/dim] {row[key]}", soft_wrap=True, highlight=False)
+        console.print()
+
+
 def display_expiring_report(conn: sqlite3.Connection):
     """
     Which assets are stale or about to be, right now — independent of
@@ -389,6 +429,14 @@ def print_schema(conn: sqlite3.Connection, table: str):
 
 
 def print_rows(conn: sqlite3.Connection, table: str, limit: int | None):
+    """
+    Plain flat dump — deliberately NOT using rich.pretty.pprint here.
+    pprint repr-quotes strings and soft-wraps at terminal width, which
+    mangles long values like signed_cdn_url (full query string, token,
+    ex= param) across multiple lines. This prints each field on its own
+    line with soft_wrap=True so Rich never inserts an artificial line
+    break — the terminal just lets it run long, exactly as stored.
+    """
     query = f"SELECT * FROM {table}"
     if limit is not None:
         query += f" LIMIT {limit}"
@@ -400,7 +448,10 @@ def print_rows(conn: sqlite3.Connection, table: str, limit: int | None):
         return
 
     for row in rows:
-        pprint(dict(row))
+        console.print(f"[bold cyan]--- id={row['id']} ---[/bold cyan]")
+        for key in row.keys():
+            console.print(f"  [dim]{key}:[/dim] {row[key]}", soft_wrap=True, highlight=False)
+        console.print()
 
 
 def inspect_table(conn: sqlite3.Connection, table: str, limit: int | None):
@@ -696,6 +747,9 @@ def main():
                        help="List assets expiring/expired right now, independent of mint.py running")
     view.add_argument("--staged", action="store_true",
                        help="High-level staging summary, grouped by album")
+    view.add_argument("--db-id", type=int, metavar="ID",
+                       help="Show one album's full record + all its assets, untruncated (fills the gap "
+                            "between --albums summarizing everything and --table dumping every album's assets together)")
 
     migrate = parser.add_argument_group("Schema migrations")
     migrate.add_argument("--add-column", dest="add_column",
@@ -820,6 +874,10 @@ def main():
 
         if args.staged:
             display_staged_overview(conn)
+            return
+
+        if args.db_id is not None:
+            display_album_detail(conn, args.db_id)
             return
 
         # Overview dashboard when run with truly zero args. The len(sys.argv)
