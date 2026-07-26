@@ -284,10 +284,10 @@ def main():
     import argparse
     from ..core.db import DatabaseManager
 
-    parser = argparse.ArgumentParser(description="Bunkr Standalone Streamer CLI")
-    parser.add_argument('--db-id', type=int, help="Database ID of the album")
-    parser.add_argument('-n', '--number', type=str, help="Item selection (e.g. 1,3,5-10)")
-    parser.add_argument('--player', choices=['mpv', 'vlc'], default=None, help="Choose media player")
+    parser = argparse.ArgumentParser(description="bunkr-api Standalone Streamer CLI")
+    parser.add_argument('--db-id', type=int, help="Database ID of the album to jump straight into it")
+    parser.add_argument('-n', '--number', type=str, help="File selection (e.g. 1,3,5-10)")
+    parser.add_argument('--player', choices=['mpv', 'vlc'], default=None, help="Choose a media player")
     parser.add_argument('--staged', action='store_true', help="Stream all staged items")
     args = parser.parse_args()
 

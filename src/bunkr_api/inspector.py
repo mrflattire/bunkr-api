@@ -8,7 +8,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 
-# Internal package imports
+# import from other modules
 from .core.db import DatabaseManager
 from .utils.formatting import format_bytes, parse_selection
 
@@ -21,17 +21,12 @@ class Inspector:
     def get_conn(self):
         return self.db._get_connection()
 
-    # ============================================================
-    # READ-ONLY REPORTS
-    # ============================================================
+    
+    ##READ-ONLY REPORTS
+    
 
     def display_table(self, table_name, limit=10, search=None, show_all=False):
-        """
-        Generic flat dump for any table not covered by a named view
-        (dashboard/albums/expiring/staged/album). Flat key:value lines,
-        not a Table — a Rich Table here would repr/truncate long values
-        like signed_cdn_url, the exact problem an earlier fix solved.
-        """
+       
         with closing(self.get_conn()) as conn:
             query = f"SELECT * FROM {table_name}"
             clauses, params = [], []
@@ -67,7 +62,7 @@ class Inspector:
         with closing(self.get_conn()) as conn:
             tables = [r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';").fetchall()]
             
-            summary = Table(title="[bold magenta]Database Volume & Pipeline Summary[/bold magenta]", expand=True)
+            summary = Table(title="[magenta]Database Volume & Pipeline Summary[/magenta]", expand=True, style="dim")
             summary.add_column("Table Name", style="cyan")
             summary.add_column("Total Records", justify="right", style="magenta")
             summary.add_column("Pipeline Execution Metrics", style="green")
@@ -90,7 +85,6 @@ class Inspector:
                     s = safe_count("SELECT COUNT(*) FROM albums WHERE is_staged=1")
                     metrics = f"[yellow]Staged Albums: {s}[/yellow]"
                 
-                # RESTORED: System Config Metrics Logic
                 elif table == "system_config":
                     try:
                         kvs = conn.execute("SELECT config_key, config_value FROM system_config;").fetchall()
@@ -100,7 +94,7 @@ class Inspector:
                 
                 summary.add_row(table, str(count), metrics)
             
-            console.print(Panel(summary, border_style="magenta", title="[bold white]Media Tracker Management System[/bold white]"))
+            console.print(Panel(summary, border_style="dim magenta", title="[bold white]Media Tracker Management System[/bold white]"))
 
     def display_albums(self):
         """Per-album breakdown table."""
@@ -110,7 +104,7 @@ class Inspector:
                 console.print("[yellow]No albums cataloged.[/yellow]")
                 return
 
-            t = Table(title="[bold magenta]Per-Album Breakdown[/bold magenta]", expand=True)
+            t = Table(title="[magenta]Per-Album Breakdown[/magenta]", expand=True, style="dim")
             t.add_column("ID", style="cyan", justify="right")
             t.add_column("Title")
             t.add_column("Files", justify="right")
@@ -132,10 +126,6 @@ class Inspector:
                 total, comp, fail, staged = stats
                 pct = f"{(comp/total*100):.0f}%" if total else "0%"
                 
-                # aggregate_size is stored as raw INTEGER bytes in core.py's
-                # schema (populated straight from the scrape JSON), not
-                # pre-formatted text — format_bytes() gives '1.20 GB'
-                # instead of a raw byte count like '1288490188'.
                 t.add_row(
                     str(a['id']), 
                     a['title'], 
@@ -171,7 +161,7 @@ class Inspector:
             console.print("[green]All tokens are fresh.[/green]")
             return
         
-        t = Table(title="Expiring/Expired Tokens")
+        t = Table(title="[dim]Expiring/Expired Tokens[/dim]", style="dim")
         t.add_column("ID", justify="right")
         t.add_column("Title")
         t.add_column("Status", style="yellow")
@@ -186,12 +176,7 @@ class Inspector:
         console.print(t)
 
     def display_staged(self):
-        """
-        Grouped-by-album staging summary — NOT the same as the dashboard's
-        single aggregate 'Staged: N' count. This was previously aliased
-        straight to display_dashboard(), which loses the per-album
-        breakdown entirely.
-        """
+        
         with closing(self.get_conn()) as conn:
             staged_albums = conn.execute(
                 "SELECT id, title, file_count FROM albums WHERE is_staged=1 ORDER BY id ASC;"
@@ -210,7 +195,7 @@ class Inspector:
             """).fetchall()
 
             if staged_albums:
-                t = Table(title="[bold magenta]Staged Albums (album-level flag)[/bold magenta]", expand=True)
+                t = Table(title="[dim magenta]Staged Albums (album-level flag)[/dim magenta]", expand=True, style="dim")
                 t.add_column("ID", justify="right", style="cyan")
                 t.add_column("Title")
                 t.add_column("Files", justify="right")
@@ -221,7 +206,7 @@ class Inspector:
                 console.print("[dim]No albums flagged staged at the album level.[/dim]")
 
             if staged_by_album:
-                t = Table(title="[bold magenta]Staged Assets by Album[/bold magenta]", expand=True)
+                t = Table(title="[dim magenta]Staged Assets by Album[/dim magenta]", expand=True, style="dim")
                 t.add_column("Album")
                 t.add_column("Staged Files", justify="right", style="cyan")
                 t.add_column("Completed", justify="right", style="green")
@@ -239,9 +224,9 @@ class Inspector:
             else:
                 console.print("[dim]No staged assets.[/dim]")
 
-    # ============================================================
-    # SCHEMA MIGRATIONS
-    # ============================================================
+    
+    ## SCHEMA MIGRATIONS
+    
 
     def add_column(self, spec: str):
         try:
@@ -273,15 +258,13 @@ class Inspector:
             except sqlite3.OperationalError as e:
                 console.print(f"[red]Failed: {e}[/red]")
 
-    # ============================================================
-    # WRITE OPERATIONS
-    # ============================================================
+    
+    ## WRITE OPERATIONS
+    
 
     def _resolve_bound(self, conn, table):
-        """Shared MAX(id) bound for parse_selection — a real id can never
-        exceed the current max, so this safely includes every real id
-        (for 'all') without excluding any real id from an explicit list,
-        regardless of gaps from prior deletions. Cheap fallback of 1000
+        """Shared MAX(id) bound for parse_selection; a real safety 
+        for gaps from prior deletions. Cheap fallback of 1000
         only matters for a genuinely empty table."""
         return conn.execute(f"SELECT MAX(id) FROM {table}").fetchone()[0] or 1000
 
@@ -302,33 +285,19 @@ class Inspector:
 
                 conn.commit()
                 verb = "staged" if state else "unstaged"
-                # cursor.rowcount, NOT len(ids) — the selection can include ids
-                # that don't actually exist (a gap within the MAX(id) bound),
-                # which len(ids) would count as "affected" even though the
-                # UPDATE matched nothing for them. Confirmed via test: staging
-                # a real id + a mid-range gap reported 2 when only 1 changed.
+                
                 console.print(f"[green]Successfully {verb} {cursor.rowcount} {target}(s).[/green]")
             except Exception as e:
                 console.print(f"[red]Error: {e}[/red]")
 
     def wipe(self, album_ids=None, force=False):
         with closing(self.get_conn()) as conn:
-            # Blank AND literal 'all' both mean "wipe everything" — routing
-            # 'all' through parse_selection(..., 9999) instead would build a
-            # 9999-element id list just to hand it to the confirmation
-            # prompt (unreadable) and to a WHERE IN clause (needlessly large).
+            
             if not album_ids or album_ids.strip().lower() == "all":
                 if not force and not Confirm.ask("[bold red]WIPE:[/bold red] Delete ALL albums and assets?"):
                     return
                 conn.execute("DELETE FROM assets")
                 conn.execute("DELETE FROM albums")
-                # VACUUM can't run inside a transaction. DELETE opens one
-                # implicitly under this connection's default isolation mode —
-                # confirmed by testing: without this commit, VACUUM raised
-                # "cannot VACUUM from within a transaction", and because that
-                # exception fired before any commit, the deletes were rolled
-                # back too (row counts unchanged after a "successful"-looking
-                # call). This commit is not optional.
                 conn.commit()
                 conn.execute("VACUUM")
                 console.print("[green]Data wiped. Configuration preserved.[/green]")
@@ -368,39 +337,101 @@ class Inspector:
                 conn.execute("VACUUM")
             console.print("[green]Database nuked. Schema will auto-rebuild on next use.[/green]")
 
-# ============================================================
-# CLI ENTRY POINT
-# ============================================================
+
+## CLI ENTRY POINT
+
 
 def main():
     insp = Inspector()
     parser = argparse.ArgumentParser(description="Bunkr DB Management Toolkit")
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", metavar="{view,stage,db}")
 
     # VIEW COMMAND
-    view = subparsers.add_parser("view", help="View data reports")
-    view.add_argument("target", default="dashboard", nargs="?",
-                       help="dashboard/albums/expiring/staged/album, or any other table name for a raw dump")
-    view.add_argument("--id", type=int, help="Album ID for 'view album'")
-    view.add_argument("--limit", "-n", type=int, default=10, help="Row limit for raw table dumps (default 10)")
-    view.add_argument("--all", action="store_true", help="Show every row (raw table dumps), ignore --limit")
-    view.add_argument("--search", "-s", help="Filter raw table dumps by title (LIKE match)")
+    view = subparsers.add_parser(
+        "view", help="View album & file details (bunkr-inspect view -h for more help)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  bunkr-inspect view                      quick summary of database\n"
+            "  bunkr-inspect view dashboard            quick summary of database\n"
+            "  bunkr-inspect view albums               per-album summary of completion %, staged count, size\n"
+            "  bunkr-inspect view expiring             albums with tokens expired or expiring soon\n"
+            "  bunkr-inspect view staged               quick view of what is staged, grouped by album\n"
+            "  bunkr-inspect view album --id 5         full detail for album 5 + all its files\n"
+            "  bunkr-inspect view assets               raw dump of the 'assets' (files) table (any table name also works)\n"
+            "  bunkr-inspect view assets --all         every file row, not just the first 10\n"
+            "  bunkr-inspect view assets -n 25         first 25 files rows instead of the default 10\n"
+            "  bunkr-inspect view assets --search foo  only files whose title contains 'foo'\n"
+        ),
+    )
+    view.add_argument(
+        "target", default="dashboard", nargs="?", metavar="TARGET",
+        help=(
+            "What to show. One of the named reports — dashboard, albums, "
+            "expiring, staged, album (requires --id) — or any other table "
+            "name (e.g. assets) for a raw row-by-row dump of that table. "
+            "Defaults to 'dashboard' if omitted."
+        )
+    )
+    view.add_argument("--id", type=int, metavar="ALBUM_ID",
+                       help="Album id to show full detail for — only used with 'view album'")
+    view.add_argument("--limit", "-n", type=int, default=10, metavar="N",
+                       help="Row limit for raw table dumps, e.g. 'view assets -n 25' (default 10, ignored with --all)")
+    view.add_argument("--all", action="store_true",
+                       help="Raw table dumps only: show every row instead of the --limit cutoff")
+    view.add_argument("--search", "-s", metavar="TEXT",
+                       help="Raw table dumps only: filter to rows whose title contains TEXT (case-sensitive LIKE match)")
 
     # STAGE COMMAND
-    stage = subparsers.add_parser("stage", help="Manage staging status")
-    stage.add_argument("target", choices=["album", "asset"])
-    stage.add_argument("selection", help="IDs (e.g. 1,2,5-10 or all)")
-    stage.add_argument("--off", action="store_true", help="Unstage instead of stage")
+    stage = subparsers.add_parser(
+        "stage", help="Stage (or unstage) albums or files(assets) for download/streaming (bunkr-inspect stage -h for more help)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  bunkr-inspect stage album 5             stage album 5 (cascades to all its assets)\n"
+            "  bunkr-inspect stage album 5 --off       unstage album 5 (cascades too)\n"
+            "  bunkr-inspect stage asset 14            stage a single file (asset) by id\n"
+            "  bunkr-inspect stage asset 14,15,22      stage a comma-separated list of asset ids\n"
+            "  bunkr-inspect stage asset 10-20         stage a range of asset ids, inclusive\n"
+            "  bunkr-inspect stage asset all           stage every asset in the database\n"
+        ),
+    )
+    stage.add_argument(
+        "target", choices=["album", "asset"], metavar="{album,asset}",
+        help="Whether SELECTION refers to album ids or asset ids. Staging an album cascades to all its assets."
+    )
+    stage.add_argument(
+        "selection", metavar="SELECTION",
+        help=(
+            "Which id(s) to stage/unstage: a single id (14), a comma list "
+            "(14,15,22), a range (10-20), a mix of both (1-5,8,12-14), or "
+            "the literal word 'all'."
+        )
+    )
+    stage.add_argument("--off", action="store_true", help="Unstage instead of stage (default action is to stage)")
 
     # DB COMMAND
-    db_cmd = subparsers.add_parser("db", help="Maintenance operations")
+    db_cmd = subparsers.add_parser(
+        "db", help="DB maintenance operations: wipe, nuke, raw SQL, schema changes (bunkr-inspect db -h for more help)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  bunkr-inspect --wipe                  delete ALL albums+assets, keep config, prompts first\n"
+            "  bunkr-inspect --wipe 12,13            delete only albums 12 and 13 (and their assets)\n"
+            "  bunkr-inspect --wipe 7-9 -y           same, but skip the confirmation prompt\n"
+            "  bunkr-inspect --nuke                  factory reset: drops every table, including config\n"
+            "  bunkr-inspect --exec \"DELETE FROM assets WHERE download_status='FAILED';\"\n"
+            "  bunkr-inspect --add-column assets:true_file_id:INTEGER\n"
+            "  bunkr-inspect --drop-column assets:true_file_id -y\n"
+        ),
+    )
     db_cmd.add_argument("--wipe", nargs="?", const="all", default=None,
-                         metavar="IDS", help="Wipe album(s) by ID/comma-list/range, or leave blank for all")
-    db_cmd.add_argument("--nuke", action="store_true", help="Factory reset (drops everything)")
-    db_cmd.add_argument("--exec", help="Run raw write SQL")
-    db_cmd.add_argument("--add-column", metavar="SPEC", help="table:column:type, e.g. assets:true_file_id:INTEGER")
-    db_cmd.add_argument("--drop-column", metavar="SPEC", help="table:column, e.g. assets:true_file_id")
-    db_cmd.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+                         metavar="IDS", help="Wipe album(s) by id/comma-list/range, or leave blank ('--wipe' alone) for every album")
+    db_cmd.add_argument("--nuke", action="store_true", help="Factory reset — drops every table including system_config")
+    db_cmd.add_argument("--exec", metavar="SQL", help="Run an arbitrary write SQL statement, e.g. an UPDATE or DELETE")
+    db_cmd.add_argument("--add-column", metavar="TABLE:COLUMN:TYPE", help="e.g. assets:true_file_id:INTEGER")
+    db_cmd.add_argument("--drop-column", metavar="TABLE:COLUMN", help="e.g. assets:true_file_id")
+    db_cmd.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts (for --wipe/--nuke/--drop-column)")
 
     args = parser.parse_args()
 
@@ -413,7 +444,7 @@ def main():
             if not args.id: console.print("[red]Error: --id required[/red]"); return
             insp.display_album_detail(args.id)
         else:
-            # Not a known keyword — treat it as a real table name.
+            # this is not a known keyword. it as a real table name.
             insp.display_table(args.target, limit=args.limit, search=args.search, show_all=args.all)
 
     elif args.command == "stage":

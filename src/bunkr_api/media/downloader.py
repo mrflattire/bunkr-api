@@ -18,7 +18,7 @@ from rich.progress import (
 )
 from rich.prompt import Prompt
 
-# Internal Package Imports
+
 from ..config import DEFAULT_OUTPUT_DIR, HEADERS
 from ..utils.formatting import sanitize_filename_simple, get_album_folder_name, clean_dragged_path, parse_selection
 from ..core.tokens import mint_single_url_async
@@ -29,7 +29,7 @@ class DownloadEngine:
     def __init__(self, db):
         self.db = db
         self.active_processes_lock = threading.Lock()
-        self.active_processes = {}  # slot_id -> Popen
+        self.active_processes = {}  
         self.shutdown_event = threading.Event()
 
     def execute_ytdlp_task(self, index, total_files, asset_data, slot_id,
@@ -282,12 +282,12 @@ def main():
 
     parser = argparse.ArgumentParser(description="Bunkr Standalone Downloader CLI")
     parser.add_argument('-i', '--input', type=str, help="Legacy JSON path")
-    parser.add_argument('--db-id', type=int, help="Database ID")
+    parser.add_argument('--db-id', type=int, help="Database ID for album to download")
     parser.add_argument('-w', '--workers', type=int, help="Worker concurrency")
-    parser.add_argument('-n', '--number', type=str, help="Item selection")
+    parser.add_argument('-n', '--number', type=str, help="Item/file selection")
     parser.add_argument('-o', '--output', type=str, help="Output directory")
-    parser.add_argument('--staged', action='store_true', help="Process staged items")
-    parser.add_argument('--triage', action='store_true', help="Process failed items")
+    parser.add_argument('--staged', action='store_true', help="Download staged items")
+    parser.add_argument('--triage', action='store_true', help="Download failed items")
     args = parser.parse_args()
 
     db = DatabaseManager()

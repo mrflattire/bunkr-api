@@ -4,6 +4,7 @@ import json
 import time
 import asyncio
 import urllib.parse
+import argparse
 from pathlib import Path
 
 from rich.console import Console
@@ -12,7 +13,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt, IntPrompt
 from curl_cffi.requests import AsyncSession
 
-# Internal package imports - using relative notation to stay package-name agnostic
+# Import internally
 from .core.db import DatabaseManager
 from .core.scraper import ScraperEngine
 from .core.tokens import daemon_loop
@@ -22,7 +23,7 @@ from .utils.formatting import (
     format_bytes, clean_dragged_path, parse_and_check_expiry, 
     parse_selection, slugify_filename
 )
-from .config import SEARCH_MODES, SORT_TYPES, TOP_CATEGORIES, VALID_COUNTS
+from .config import SEARCH_MODES, SORT_TYPES, TOP_CATEGORIES, VALID_COUNTS, VERSION, DEFAULT_JSON_DIR
 
 console = Console()
 db = DatabaseManager()
@@ -53,6 +54,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
 def show_album_details(album_id):
     """
     Restored: The full detailed Dashboard with all original 7 actions.
+    (Matches the logic of render_db_dashboard from read.py)
     """
     downloader = DownloadEngine(db)
     player = PlayerEngine(db)
@@ -64,6 +66,7 @@ def show_album_details(album_id):
         with db.connection() as conn:
             album = conn.execute("SELECT * FROM albums WHERE id = ?;", (album_id,)).fetchone()
             if not album: 
+                console.print("[bold red][!] Database album record missing.[/bold red]")
                 break
             album = dict(album)
             assets = db.get_album_assets(album_id)
@@ -73,7 +76,7 @@ def show_album_details(album_id):
         # 2. Render Header
         staged_badge = " [bold green][STAGED][/bold green]" if album.get("is_staged") else ""
         summary = (
-            f"[bold cyan]Origin Context:[/bold cyan] {album['search_term'] or 'Direct Link'}\n"
+            f"[bold cyan]Origin Context:[/bold cyan] {album['search_term'] or 'Direct Link / Import'}\n"
             f"[bold cyan]Album Global Index:[/bold cyan] #{album['global_index']}\n"
             f"[bold cyan]Reported Dataset Size:[/bold cyan] {album['aggregate_size']} ({album['file_count']} files){staged_badge}"
         )
@@ -122,7 +125,7 @@ def show_album_details(album_id):
 
         # Action 1: Stream
         if act == "1":
-            sel = Prompt.ask("[bold cyan][?][/bold cyan] Stream selection (Enter for all)")
+            sel = Prompt.ask("[bold cyan][?][/bold cyan] Stream selection (Enter for all)").strip() or "all"
             indices = parse_selection(sel, total_items)
             p_engine = Prompt.ask("[bold cyan][?][/bold cyan] Media Player Engine", choices=["mpv", "vlc"], default="mpv")
             
@@ -140,7 +143,7 @@ def show_album_details(album_id):
 
         # Action 2: Download Targeted
         elif act == "2":
-            sel = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index, list, or range")
+            sel = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index, list, or range").strip()
             if not sel: continue
             indices = parse_selection(sel, total_items)
             workers = IntPrompt.ask("[bold cyan][?][/bold cyan] Worker concurrency (MAX=5)", default=1)
@@ -194,7 +197,7 @@ def show_album_details(album_id):
                     conn.execute("UPDATE albums SET is_staged=0 WHERE id=?", (album_id,))
                     conn.execute("UPDATE assets SET is_staged=0 WHERE album_id=?", (album_id,))
                 elif sub in ("3","4"):
-                    sel = Prompt.ask("[bold cyan][?][/bold cyan] Enter indices/range (or 'all')")
+                    sel = Prompt.ask("[bold cyan][?][/bold cyan] Enter indices/range (or 'all')").strip()
                     idx_list = parse_selection(sel, total_items)
                     val = 1 if sub == "3" else 0
                     for i in idx_list:
@@ -202,22 +205,42 @@ def show_album_details(album_id):
             console.print("[bold green][+][/bold green] Staging state updated in database.")
             time.sleep(1)
 
-async def run_scrape_interactive():
-    """Restored: Multi-page search loop with original informative descriptive prompt."""
+async def run_scrape_interactive(search_seed=None, mode_seed=None, per_seed=None, sort_seed=None, save_json_seed=None, output_dir_seed=None):
+    """
+    Multi-page search loop. 
+    Bypasses individual prompts if seeds (flags) are provided.
+    """
     scraper = ScraperEngine(db)
-    search_term = Prompt.ask("[bold cyan][?][/bold cyan] Enter search term [dim](Blank for homepage)[/dim]").strip()
-    mode_choice = Prompt.ask("[bold cyan][?][/bold cyan] Mode", choices=list(SEARCH_MODES.keys()), default="broad").lower()
-    url_per = IntPrompt.ask("[bold cyan][?][/bold cyan] Results per page", choices=[str(c) for c in VALID_COUNTS], default=20)
-    sort_choice = Prompt.ask("[bold cyan][?][/bold cyan] Sort", choices=["latest", "oldest", "most files"], default="latest").lower()
     
-    url_mode, url_sort = SEARCH_MODES[mode_choice], SORT_TYPES[sort_choice]
-    save_json = Prompt.ask("[bold cyan][?][/bold cyan] Save JSON backup?", choices=["y", "n"], default="n") == "y"
+    # 1. Handle Search Term
+    search_term = search_seed if search_seed is not None else Prompt.ask("[bold cyan][?][/bold cyan] Enter search term [dim](Blank for homepage)[/dim]").strip()
+    
+    # 2. Handle Mode
+    if mode_seed:
+        url_mode = mode_seed
+    else:
+        mode_choice = Prompt.ask("[bold cyan][?][/bold cyan] Mode", choices=list(SEARCH_MODES.keys()), default="broad").lower()
+        url_mode = SEARCH_MODES[mode_choice]
+        
+    # 3. Handle Per-Page
+    url_per = per_seed if per_seed is not None else IntPrompt.ask("[bold cyan][?][/bold cyan] Results per page", choices=[str(c) for c in VALID_COUNTS], default=20)
+    
+    # 4. Handle Sort
+    if sort_seed:
+        url_sort = sort_seed
+    else:
+        sort_choice = Prompt.ask("[bold cyan][?][/bold cyan] Sort", choices=["latest", "oldest", "most files"], default="latest").lower()
+        url_sort = SORT_TYPES[sort_choice]
+    
+    # 5. Handle Save JSON
+    save_json = save_json_seed if save_json_seed is not None else (Prompt.ask("[bold cyan][?][/bold cyan] Save JSON backup?", choices=["y", "n"], default="n") == "y")
 
     async with AsyncSession(impersonate="chrome") as session:
         current_page = 1
         while True:
             query = {'search': search_term, 'mode': url_mode, 'per': str(url_per), 'sort': url_sort}
             if current_page > 1: query['page'] = str(current_page)
+            
             search_url = f"https://balbums.st/?{urllib.parse.urlencode(query)}"
             console.print(f"\n[bold yellow][*][/bold yellow] Loading Search Results (Page {current_page})...")
             
@@ -226,7 +249,7 @@ async def run_scrape_interactive():
             albums = scraper.parse_albums(res.text)
             
             if not albums:
-                console.print("[bold red][!] No results found.[/bold red]")
+                console.print("[bold red][!] No albums discovered.[/bold red]")
                 if current_page > 1: current_page -= 1; continue
                 return None
 
@@ -242,7 +265,6 @@ async def run_scrape_interactive():
                 table.add_row(str(i), album['title'][:60], album.get('file_count', '???'), album['url'][:40] + "...")
             console.print(table)
 
-            # RESTORED: Informative Descriptive Prompt
             prompt_text = (
                 f"\n[bold cyan][?][/bold cyan] Enter selection number ({start_idx}-{end_idx}), "
                 f"[bold white]'n'[/bold white] for next page, "
@@ -262,19 +284,32 @@ async def run_scrape_interactive():
                         albums[idx-start_idx]['url'], 
                         search_term, 
                         album_number_index=idx,
-                        save_json=save_json
+                        save_json=save_json,
+                        output_dir=output_dir_seed
                     )
                 else:
                     console.print(f"[bold red][!] Selection {idx} is out of range.[/bold red]")
             except ValueError: 
                 console.print("[bold red][!] Please enter a valid number or navigation command.[/bold red]")
 
-async def run_top_engine_interactive():
-    """Restored: Trending loop with original descriptive prompt."""
+async def run_top_engine_interactive(category_seed=None, save_json_seed=None, output_dir_seed=None):
+    """Restored: Trending loop with original descriptive prompt and flag bypass."""
     scraper = ScraperEngine(db)
-    cat = Prompt.ask("[bold cyan][?][/bold cyan] Category", choices=list(TOP_CATEGORIES.keys()), default="albums")
+    
+    # 1. Handle category to skip prompt if category_seed exists
+    cat = category_seed if category_seed is not None else Prompt.ask(
+        "[bold cyan][?][/bold cyan] Category", 
+        choices=list(TOP_CATEGORIES.keys()), 
+        default="albums"
+    )
+    
+    # 2. Handle timeframe
     lapse = Prompt.ask("[bold cyan][?][/bold cyan] Timeframe", choices=["24h", "7d", "30d", "all"], default="24h")
-    save_json = Prompt.ask("[bold cyan][?][/bold cyan] Save JSON backup?", choices=["y", "n"], default="n") == "y"
+    
+    # 3. Handle Save JSON to skip prompt if save_json_seed exists
+    save_json = save_json_seed if save_json_seed is not None else (
+        Prompt.ask("[bold cyan][?][/bold cyan] Save JSON backup?", choices=["y", "n"], default="n") == "y"
+    )
 
     async with AsyncSession(impersonate="chrome") as session:
         current_page = 1
@@ -291,17 +326,16 @@ async def run_top_engine_interactive():
             start_idx = (current_page - 1) * 15 + 1
             end_idx = start_idx + len(items) - 1
             
-            table = Table(title=f"Trending {cat.capitalize()} ({lapse}) - Page {current_page}")
+            table = Table(title=f"Trending {cat.capitalize()} ({lapse}) - Page {current_page}", style="dim white")
             table.add_column("#", justify="right", style="magenta")
             table.add_column("Title")
             table.add_column("Files (Est.)", style="green")
             
-            for i, item in enumerate(items, start_idx):
+            for i, item in enumerate(items, start=start_idx):
                 table.add_row(str(i), item['title'], item.get('file_count', '1 file'))
             
             console.print(table)
 
-            # RESTORED: Informative Descriptive Prompt
             prompt_text = (
                 f"\n[bold cyan][?][/bold cyan] Enter selection number ({start_idx}-{end_idx}), "
                 f"[bold white]'n'[/bold white] for next page, "
@@ -321,7 +355,8 @@ async def run_top_engine_interactive():
                         items[idx-start_idx]['url'], 
                         f"top_{cat}", 
                         album_number_index=idx,
-                        save_json=save_json
+                        save_json=save_json,
+                        output_dir=output_dir_seed
                     )
                 else:
                     console.print(f"[bold red][!] Selection {idx} is out of range.[/bold red]")
@@ -334,7 +369,7 @@ def main_loop():
         albums = db.get_all_albums()
         console.print("\n[bold magenta][*] Discovered Albums Cataloged in DB:[/bold magenta]")
         if not albums:
-            console.print("[dim]  (No albums cataloged yet)[/dim]")
+            console.print("[dim]  (No records cataloged yet)[/dim]")
         else:
             for i, a in enumerate(albums, start=1):
                 a_dict = dict(a)
@@ -351,7 +386,7 @@ def main_loop():
         raw = Prompt.ask("[bold cyan][?][/bold cyan] Choose an album #, drop a JSON path, or select an option").strip()
         if not raw: continue
         
-        # Handle the drag-and-drop or manual JSON path feature
+        # drag-and-drop or manual JSON path dealer
         processed_path = clean_dragged_path(raw)
         if processed_path.lower().endswith('.json') and os.path.exists(processed_path):
             try:
@@ -376,11 +411,13 @@ def main_loop():
             continue
         
         if cmd == 'd':
-            del_spec = Prompt.ask("[bold red][?][/bold red] Album number(s) to delete — single, comma list, or range (or Enter to nuke all)")
+            del_spec = Prompt.ask("[bold red][?][/bold red] Album number(s) to delete (e.g. 1, 2-4)")
+            if not del_spec: continue
             try:
                 indices = parse_selection(del_spec, len(albums))
                 target_ids = [albums[idx-1]['id'] for idx in indices]
-                if Prompt.ask(f"Delete {len(target_ids)} album(s)?", choices=["y", "n"]) == "y":
+                
+                if Prompt.ask(f"Permanently delete {len(target_ids)} album(s)?", choices=["y", "n"], default="n") == "y":
                     with db.connection() as conn:
                         p_holders = ",".join("?" for _ in target_ids)
                         conn.execute(f"DELETE FROM assets WHERE album_id IN ({p_holders})", target_ids)
@@ -396,3 +433,107 @@ def main_loop():
                 show_album_details(albums[choice_idx-1]['id'])
         except ValueError:
             console.print("[red][!] Invalid selection or unknown command.[/red]")
+
+def main():
+    """
+    MASTER CLI ENTRY POINT
+    (Matches logic from original read.py main block)
+    """
+    parser = argparse.ArgumentParser(
+        prog="bunkr-api",
+        description=f"Bunkr API Manager {VERSION} - Interactive Dashboard & Master CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Master Help - Related Binaries:
+  bunk-api         Dive straight into the main interactive CLI; search, scrape, stream, download
+  bunkr-scrape     Search bunkr by creator name and add any of their albums to your DB .
+  bunkr-stream     Go straight to stream menu or direct stream with ID (bunkr-stream --db-id 3).
+  bunkr-download   Go straight to download menu or direct download with ID (bunkr-download --db-id 3).
+  bunkr-inspect    Database maintenance and reporting.
+  bunkr-mint       Open concurrent token minting daemon in another terminal window.
+        """
+    )
+    # Core Metadata
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}')
+
+    # Search & Scraping Flags
+    parser.add_argument("search", nargs="?", default=None, help="The search query")
+    parser.add_argument("-m", "--mode", choices=list(SEARCH_MODES.keys()), help="Search mode")
+    parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="Results per page")
+    parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Sorting metric")
+    parser.add_argument("-t", "--top", nargs="?", const="prompt", help="Trending category")
+    parser.add_argument("--save-json", action="store_true", help="Save backup JSON")
+    parser.add_argument(
+        "-o", "--output", 
+        type=Path, 
+        default=DEFAULT_JSON_DIR, 
+        help="Target directory to save JSON metadata"
+    )
+
+    # Working Flags
+    parser.add_argument('--db-id', type=int, help="Jump directly to an album in database by ID. Leave out --db-id for the same effect")
+    parser.add_argument('-i', '--input', type=str, help="Import a legacy JSON file and view it.")
+    
+    # Catch bare positional argument from original read.py
+    parser.add_argument('path', nargs='?', help=argparse.SUPPRESS)
+
+    args = parser.parse_args()
+
+    # Route 1: Handle Import (-i or positional JSON path)
+    target_path = args.input or (args.path if args.path and args.path.endswith('.json') else None)
+    if target_path:
+        processed = clean_dragged_path(target_path)
+        if os.path.exists(processed):
+            try:
+                with open(processed, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                new_id = db.register_album_from_json(data)
+                show_album_details(new_id)
+                return
+            except Exception as e:
+                console.print(f"[bold red][!] Import failed: {e}[/bold red]")
+                sys.exit(1)
+
+    # Route 2: Handle Direct Jump (--db-id or positional numeric ID)
+    raw_val = args.db_id or (int(args.path) if args.path and args.path.isdigit() else None)
+    if raw_val:
+        show_album_details(raw_val)
+        return
+
+    # Route 3: Handle Scraper Command Direct Executions (if search or top flags were passed)
+    url_mode = SEARCH_MODES.get(args.mode) if args.mode else None
+    if args.search or args.top or args.mode or args.save_json or args.output != DEFAULT_JSON_DIR:
+        async def _run():
+            if args.top:
+                return await run_top_engine_interactive(
+                    category_seed=args.top if args.top != "prompt" else None,
+                    save_json_seed=args.save_json,
+                    output_dir=args.output
+                )
+            else:
+                return await run_scrape_interactive(
+                    search_seed=args.search,
+                    mode_seed=url_mode,
+                    per_seed=args.per,
+                    sort_seed=args.sort,
+                    save_json_seed=args.save_json,
+                    output_dir=args.output
+                )
+
+        try:
+            album_id = asyncio.run(_run())
+            if album_id:
+                show_album_details(album_id)
+            return
+        except KeyboardInterrupt:
+            sys.exit(0)
+
+    # Default: Interactive Main Menu Loop
+    try:
+        main_loop()
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow][!] Session terminated gracefully.[/bold yellow]")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()

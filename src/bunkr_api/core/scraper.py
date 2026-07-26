@@ -6,10 +6,10 @@ import urllib.parse
 import argparse
 import sys
 from bs4 import BeautifulSoup
+from pathlib import Path
 from rich.console import Console
 
-# Internal Package Imports
-from ..config import HEADERS, SEARCH_MODES, SORT_TYPES, TOP_CATEGORIES, VALID_COUNTS
+from ..config import HEADERS, SEARCH_MODES, SORT_TYPES, TOP_CATEGORIES, VALID_COUNTS, DEFAULT_OUTPUT_DIR
 from ..utils.http import execute_request_with_retry_async
 from ..utils.formatting import slugify_filename
 
@@ -29,10 +29,9 @@ class ScraperEngine:
         if not val:
             return 0
         try:
-            # Strip non-numeric chars like commas or 'MB'
             clean_val = re.sub(r'[^\d]', '', str(val))
             return int(clean_val) if clean_val else 0
-        except (ValueError, TypeError):
+        except:
             return 0
 
     def standardize_top_url(self, url: str) -> str:
@@ -88,6 +87,9 @@ class ScraperEngine:
                 title_tag = card.find('h3') or card.find('p')
                 title = title_tag.get_text(strip=True) if title_tag else card.get_text(strip=True)
                 full_url = href if href.startswith('http') else 'https://bunkr.cr' + href
+                
+                if category in ["videos", "images"]:
+                    full_url = self.standardize_top_url(full_url)
                 
                 file_count = "1 file"
                 for span in card.find_all('span'):
@@ -153,10 +155,8 @@ class ScraperEngine:
                 
         return parsed_files
 
-    async def scrape_album(self, session, url, search_term, album_number_index=0, save_json=False):
-        """
-        Deep resolution of an album with original informative console logging.
-        """
+    async def scrape_album(self, session, url, search_term, album_number_index=0, save_json=False, output_dir=None):
+        """Deep resolution of an album with original informative console logging."""
         parsed_url = urllib.parse.urlparse(url)
         params = dict(urllib.parse.parse_qsl(parsed_url.query))
         params['advanced'] = '1'
@@ -164,33 +164,29 @@ class ScraperEngine:
             parsed_url._replace(query=urllib.parse.urlencode(params))
         )
         
-        # RESTORED: Step 2 Header
-        console.print(f"\n[bold yellow][*][/bold yellow] Navigating to optimized album view ..")
+        console.print(f"\n[bold yellow][*][/bold yellow] Navigating optimized album view ")
         
         res = await execute_request_with_retry_async(session, optimized_url, headers=HEADERS)
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # Capture title
         album_title = soup.title.string.replace(" - Bunkr", "") if soup.title else "Unknown Album"
         
-        # Resolve Metadata
+        console.print(f"\n[bold green][+][/bold green] Selected: #[bold yellow]{album_number_index}[/bold yellow] - [bold white]{album_title}[/bold white]")
+
         album_size, total_files = self.parse_album_header_metadata(soup)
         final_files = self.extract_advanced_album_files(res.text)
         
-        # RESTORED: Album Info Output
         if album_size and total_files:
             console.print(f"[bold green][+][/bold green] Album Info -> Aggregate Size: [bold yellow]{album_size}[/bold yellow] | Count: [bold yellow]{total_files}[/bold yellow]")
         
         console.print(f"[bold green][+][/bold green] Deep resolution complete. Pulled [bold cyan]{len(final_files)}[/bold cyan] accurate item profiles instantly.")
 
-        # RESTORED: File enumeration list (Top 10 as per original screenshot)
         for i, f_rec in enumerate(final_files[:10], start=1):
             raw_size = f_rec.get('size', 0)
             size_mb = round(raw_size / (1024*1024), 2)
             size_str = f" ({size_mb} MB)" if raw_size else ""
             console.print(f"  {i}. {f_rec['title']}{size_str} [[italic green]True[/italic green] ID: {f_rec['true_file_id']}]")
 
-        # Package data
         data = {
             'search_term': search_term or "N/A",
             'selected_album': {
@@ -203,43 +199,61 @@ class ScraperEngine:
         }
         
         if save_json:
-            clean_term = re.sub(r'[^\w\s-]', '', search_term).strip().lower().replace(' ', '_')
-            out_filename = f"scraped_{clean_term}_{int(time.time())}.json"
+            # Determine correct output directory
+            save_path = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
+            save_path.mkdir(parents=True, exist_ok=True)
+            
+            output_filename = save_path / f"{slugify_filename(album_number_index, album_title)}.json"
             try:
-                with open(out_filename, "w", encoding="utf-8") as f:
+                with open(output_filename, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                console.print(f"[bold green][+][/bold green] Enriched results saved out to [bold white]{output_filename}[/bold white]")
             except Exception as e:
                 print(f"[!] JSON Backup Failed: {e}")
 
-        # RESTORED: Sync message
         console.print("[bold yellow][*][/bold yellow] Syncing records with Database Manager...")
         album_id = self.db.register_album_from_json(data)
-        
-        # RESTORED: Final success message
         console.print(f"[bold green][+][/bold green] Database synchronization complete! Registered Album ID: [bold yellow]#{album_id}[/bold yellow]")
         
         return album_id
 
 def main():
-    """Standalone Entry point for bunkr-scrape command."""
+    """Standalone CLI entry point for bunkr-scrape command."""
     from ..core.db import DatabaseManager
+    
     parser = argparse.ArgumentParser(description="Bunkr Standalone Scraper CLI")
     parser.add_argument("search", nargs="?", default=None, help="The search query")
     parser.add_argument("-m", "--mode", choices=list(SEARCH_MODES.keys()), help="Search mode")
-    parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="Results per page")
-    parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Sorting metric")
+    parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="No. of results per page")
+    parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Sort by")
     parser.add_argument("-t", "--top", nargs="?", const="prompt", help="Trending category")
     parser.add_argument("--save-json", action="store_true", help="Save backup JSON")
+    parser.add_argument("-o", "--output", type=str, default=None, help="Output directory for a JSON metadata")
+    
     args = parser.parse_args()
 
     db = DatabaseManager()
+    
+    url_mode = SEARCH_MODES.get(args.mode) if args.mode else None
+    
     from ..cli import run_scrape_interactive, run_top_engine_interactive
 
     async def _run():
         if args.top:
-            await run_top_engine_interactive()
+            await run_top_engine_interactive(
+                category_seed=args.top if args.top != "prompt" else None,
+                save_json_seed=args.save_json,
+                output_dir_seed=args.output
+            )
         else:
-            await run_scrape_interactive()
+            await run_scrape_interactive(
+                search_seed=args.search, 
+                mode_seed=url_mode, 
+                per_seed=args.per, 
+                sort_seed=args.sort,
+                save_json_seed=args.save_json,
+                output_dir_seed=args.output
+            )
 
     try:
         asyncio.run(_run())

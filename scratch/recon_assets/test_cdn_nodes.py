@@ -1,7 +1,8 @@
 import re
+import time
 import requests
 
-# Your collected list of active Bunkr CDN nodes
+# List of target Bunkr CDN nodes
 CDN_NODES = [
     "c1fr-b.cdn.cr",
     "c2rm-b.cdn.cr",
@@ -19,66 +20,80 @@ CDN_NODES = [
     "prxp-b.cdn.cr"
 ]
 
-# The target URL containing the asset path and fresh token parameters
-faulty_url = "https://prxp-b.cdn.cr/storage/media/VTS_01_5-DUzavUbJ.VOB?n=VTS_01_5.VOB&token=12d6f221ee281f73697cbdd009a0443bb973af8e&ex=1784410577"
+target_url = "https://prxp-b.cdn.cr/storage/media/VTS_01_5-DUzavUbJ.VOB?n=VTS_01_5.VOB&token=12d6f221ee281f73697cbdd009a0443bb973af8e&ex=1784410577"
 
-def find_working_cdn(target_url, nodes):
-    # Extract the /storage/media/... path and query tokens from the faulty URL string
-    match = re.match(r"https://[^/]+(.*?)$", target_url)
+def benchmark_cdn_nodes(original_url, nodes):
+    # Extract path and query parameters
+    match = re.match(r"https://[^/]+(.*?)$", original_url)
     if not match:
-        print("[-] Error: The original URL structure is invalid.")
-        return None
+        print("[-] Error: Invalid target URL structure.")
+        return
     
     path_and_tokens = match.group(1)
     
-    # Emulate basic browser environment headers for the Angie proxies
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://bunkr.ru",
-        "Accept": "*/*"
+        "Accept": "*/*",
+        # Request only the first byte to verify server speed and payload throughput safely
+        "Range": "bytes=0-0"
     }
-    
-    print(f"[*] Sweeping {len(nodes)} nodes for the asset...\n")
-    
+
+    results = []
+    print(f"[*] Sweeping & Benchmarking {len(nodes)} CDN nodes...\n")
+
     for node in nodes:
-        # Construct the new URL by swapping in the alternative node host
         test_url = f"https://{node}{path_and_tokens}"
-        print(f"[-] Probing node: {node:<15} -> ", end="", flush=True)
-        
+        print(f"[-] Testing {node:<15} -> ", end="", flush=True)
+
         try:
-            # HEAD request to safely inspect HTTP status code and content size without data download
-            response = requests.head(test_url, headers=headers, allow_redirects=True, timeout=6)
+            start_time = time.perf_counter()
             
-            if response.status_code == 200:
-                print("SUCCESS (200 OK)")
-                
-                # Format file size for easy readability if available
-                bytes_size = response.headers.get("Content-Length")
-                if bytes_size and bytes_size.isdigit():
-                    mb_size = round(int(bytes_size) / (1024 * 1024), 2)
-                    size_str = f"{mb_size} MB"
-                else:
-                    size_str = "unknown size"
-                
-                print(f"\n[=== LIVE STREAM LINK FOUND ===]")
-                print(f"Operational Node: {node}")
-                print(f"Asset File Size:  {size_str}")
-                print(f"Direct Link:      {test_url}\n")
-                return test_url
-                
+            # Using GET with stream=True and Range header to test initial node response time
+            response = requests.get(test_url, headers=headers, stream=True, timeout=5, allow_redirects=True)
+            
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+            # 200 OK or 206 Partial Content indicates a successful payload hit
+            if response.status_code in (200, 206):
+                print(f"ONLINE | Response Time: {elapsed_ms:.2f} ms")
+                results.append({
+                    "node": node,
+                    "url": test_url,
+                    "latency": elapsed_ms,
+                    "status": response.status_code
+                })
             elif response.status_code == 403:
-                # Catch if the node returns a body structure check or basic block
                 print("DENIED (403 Forbidden)")
             else:
-                print(f"FAILED (Status: {response.status_code})")
-                
-        except requests.exceptions.Timeout:
-            print("FAILED (Network Timeout)")
-        except requests.exceptions.RequestException:
-            print("FAILED (Connection Error/Refused)")
-            
-    print("\n[-] Critical: None of the alternative nodes in this batch accepted the token path.")
-    return None
+                print(f"FAILED (Status {response.status_code})")
 
-# Execute the sweeping rotation matrix
-working_link = find_working_cdn(faulty_url, CDN_NODES)
+            response.close()
+
+        except requests.exceptions.Timeout:
+            print("TIMEOUT (>5000 ms)")
+        except requests.exceptions.RequestException:
+            print("CONNECTION ERROR")
+
+    # Sort results by response speed (fastest latency first)
+    results.sort(key=lambda x: x["latency"])
+
+    print("\n" + "="*50)
+    print("           RESPONSIVENESS RANKINGS           ")
+    print("="*50)
+
+    if not results:
+        print("[-] No responsive or valid nodes found.")
+        return
+
+    for idx, item in enumerate(results, start=1):
+        print(f"{idx:2d}. Node: {item['node']:<15} | Latency: {item['latency']:.2f} ms")
+    
+    fastest = results[0]
+    print("\n[=== FASTEST OPERATIONAL CDN LINK ===]")
+    print(f"Node:    {fastest['node']}")
+    print(f"Latency: {fastest['latency']:.2f} ms")
+    print(f"URL:     {fastest['url']}\n")
+
+if __name__ == "__main__":
+    benchmark_cdn_nodes(target_url, CDN_NODES)

@@ -4,18 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bunkr-api"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 description = "Interactive Python API wrapper for Bunkr"
 dependencies = [
-    "rich",
-    "curl_cffi",
-    "beautifulsoup4",
-    "yt-dlp",
-    "urllib3"
+    "rich>=13.0.0",
+    "curl_cffi>=0.7.0",
+    "beautifulsoup4>=4.12.0",
+    "yt-dlp>=2024.3.10",
+    "urllib3>=2.0.0"
 ]
 
 [project.scripts]
-bunkr-api = "bunkr_api.cli:main_loop"
+bunkr-api = "bunkr_api.cli:main"
 bunkr-scrape = "bunkr_api.core.scraper:main"
 bunkr-stream = "bunkr_api.media.player:main"
 bunkr-mint = "bunkr_api.core.tokens:main"

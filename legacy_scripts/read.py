@@ -325,9 +325,27 @@ if __name__ == "__main__":
     if os.name == 'nt':
         subprocess.run("", shell=True)
 
-    # 1. CLI Entry Point Setup
-    if len(sys.argv) >= 2:
-        target_path = clean_dragged_path(sys.argv[1])
+    # 1. CLI Entry Point Setup (Supports bare arguments and -i/--input flags)
+    target_arg = None
+    if "-i" in sys.argv:
+        try:
+            idx = sys.argv.index("-i")
+            if idx + 1 < len(sys.argv):
+                target_arg = sys.argv[idx + 1]
+        except ValueError:
+            pass
+    elif "--input" in sys.argv:
+        try:
+            idx = sys.argv.index("--input")
+            if idx + 1 < len(sys.argv):
+                target_arg = sys.argv[idx + 1]
+        except ValueError:
+            pass
+    elif len(sys.argv) >= 2:
+        target_arg = sys.argv[1]
+
+    if target_arg:
+        target_path = clean_dragged_path(target_arg)
         if target_path.endswith('.json') and os.path.exists(target_path):
             try:
                 with open(target_path, "r", encoding="utf-8") as f:
