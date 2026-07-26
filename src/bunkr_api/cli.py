@@ -1,17 +1,26 @@
-import sys
-import os
-import json
-import time
-import asyncio
-import urllib.parse
 import argparse
+import asyncio
+import json
+import os
+import sys
+import time
+import urllib.parse
 from pathlib import Path
 
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.prompt import Prompt, IntPrompt
 from curl_cffi.requests import AsyncSession
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import IntPrompt, Prompt
+from rich.table import Table
+
+from .config import (
+    DEFAULT_JSON_DIR,
+    SEARCH_MODES,
+    SORT_TYPES,
+    TOP_CATEGORIES,
+    VALID_COUNTS,
+    VERSION,
+)
 
 # Import internally
 from .core.db import DatabaseManager
@@ -20,10 +29,11 @@ from .core.tokens import daemon_loop
 from .media.downloader import DownloadEngine
 from .media.player import PlayerEngine
 from .utils.formatting import (
-    format_bytes, clean_dragged_path, parse_and_check_expiry, 
-    parse_selection, slugify_filename
+    clean_dragged_path,
+    format_bytes,
+    parse_and_check_expiry,
+    parse_selection,
 )
-from .config import SEARCH_MODES, SORT_TYPES, TOP_CATEGORIES, VALID_COUNTS, VERSION, DEFAULT_JSON_DIR
 
 console = Console()
 db = DatabaseManager()
@@ -40,7 +50,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
     minter_style = " [bold red blink]5. Mint new tokens (⚠️ EXPIRED)[/bold red blink]" if has_expired_tokens else " [bold white]5.[/bold white] Mint new tokens"
 
     console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
-    console.print(f" Navigation -> [bold white]n[/bold white]: Next Page | [bold white]p[/bold white]: Prev Page")
+    console.print(" Navigation -> [bold white]n[/bold white]: Next Page | [bold white]p[/bold white]: Prev Page")
     console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 3,7,12 | 1-5 | staged | Enter for ALL)[/dim]")
     console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
     console.print(" [bold white]3.[/bold white] Download ALL assets in this album")
@@ -177,7 +187,7 @@ def show_album_details(album_id):
                 url = target.get("signed_cdn_url") or target.get("source_url")
                 console.print(f"\n[bold green][+][/bold green] Endpoint: [bold white]{url}[/bold white]\n")
                 Prompt.ask("[dim white]Press Enter to return...[/dim white]")
-            except: 
+            except (ValueError, KeyboardInterrupt): 
                 console.print("[bold red][!] Invalid selection.[/bold red]")
 
         # Action 5: Mint (Feedback restored via daemon_loop)
@@ -395,7 +405,7 @@ def main_loop():
                 new_id = db.register_album_from_json(data)
                 show_album_details(new_id)
                 continue
-            except Exception as e:
+            except Exception as e: # noqa: BLE001
                 console.print(f"[red][!] JSON import failed: {e}[/red]")
                 continue
 
@@ -423,8 +433,8 @@ def main_loop():
                         conn.execute(f"DELETE FROM assets WHERE album_id IN ({p_holders})", target_ids)
                         conn.execute(f"DELETE FROM albums WHERE id IN ({p_holders})", target_ids)
                     console.print("[bold green][+][/bold green] Deletion successful.")
-            except: 
-                console.print("[red][!] Deletion canceled or invalid indices.[/red]")
+            except Exception as e:  # noqa: BLE001 
+                console.print(f"[red][!] Deletion failed: {e}[/red]")
             continue
 
         try:
@@ -490,7 +500,7 @@ Master Help - Related Binaries:
                 new_id = db.register_album_from_json(data)
                 show_album_details(new_id)
                 return
-            except Exception as e:
+            except Exception as e: # noqa: BLE001 
                 console.print(f"[bold red][!] Import failed: {e}[/bold red]")
                 sys.exit(1)
 

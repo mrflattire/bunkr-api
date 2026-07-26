@@ -1,14 +1,22 @@
+import asyncio
 import os
+import re
+import sqlite3
 import sys
 import time
-import re
-import asyncio
 import urllib.parse
-from curl_cffi.requests import AsyncSession
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
-# Internal Package Imports
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.errors import CurlError
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
+
 from ..config import HEADERS
 from ..utils.http import execute_request_with_retry_async
 
@@ -98,7 +106,7 @@ async def process_asset_task(session, db, sem, asset, progress, task_id):
         try:
             fresh_url = await mint_single_url_async(session, file_id)
             db.update_asset_url(asset["id"], fresh_url)
-        except Exception:
+        except (TimeoutError, CurlError, sqlite3.Error, KeyError, ValueError):
             pass
         finally:
             progress.advance(task_id)
@@ -130,7 +138,7 @@ async def refresh_all_tokens_async(db, assets, max_workers: int):
             await asyncio.gather(*tasks)
 
 
-def daemon_loop(album_id: int = None):
+def daemon_loop(album_id: int | None = None):
     """
     Restored: Loop that polls the database and renews expiring tokens.
     If album_id is specified, it performs a one-shot targeted refresh.
@@ -171,7 +179,7 @@ def daemon_loop(album_id: int = None):
         except KeyboardInterrupt:
             console.print("\n[yellow][!][/yellow] Minter shut down.")
             break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             console.print(f"[bold red][x] Minter Error:[/bold red] {e}")
             if album_id:
                 break

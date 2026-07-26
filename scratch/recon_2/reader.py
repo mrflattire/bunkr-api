@@ -1,13 +1,13 @@
-import sys
 import json
 import os
+import sys
 import time
-from datetime import datetime
 import urllib.parse
+
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
 
 console = Console()
 

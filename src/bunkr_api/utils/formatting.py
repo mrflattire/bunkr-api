@@ -1,7 +1,7 @@
 import re
 import time
 import urllib.parse
-from typing import Optional, Set
+
 
 def format_bytes(num_bytes) -> str:
     """Original byte formatter."""
@@ -31,15 +31,16 @@ def get_album_folder_name(album_id, album_title: str) -> str:
     clean = re.sub(r'\s+', "_", clean).strip("_") or "unknown_album"
     return f"#{album_id}_{clean}"
 
-def extract_expiry_from_url(url_str: Optional[str]) -> Optional[int]:
+def extract_expiry_from_url(url_str: str | None) -> int | None:
     if not url_str: return None
     try:
         parsed = urllib.parse.urlparse(url_str)
         q = dict(urllib.parse.parse_qsl(parsed.query))
         return int(q['ex']) if 'ex' in q else None
-    except: return None
+    except Exception:  # noqa: BLE001
+        return None
 
-def parse_and_check_expiry(expiry: Optional[int]) -> str:
+def parse_and_check_expiry(expiry: int | None) -> str:
     """Restored: The detailed colored expiry status from read.py."""
     if not expiry: return "[dim white]No token found[/dim white]"
     current = int(time.time())
@@ -51,7 +52,7 @@ def parse_and_check_expiry(expiry: Optional[int]) -> str:
         return f"[bold green]Valid ({hours}h {mins}m left) ✅[/bold green]"
     return f"[bold yellow]Valid ({mins}m left) ⚠️[/bold yellow]"
 
-def parse_selection(spec: str, total: int) -> Set[int]:
+def parse_selection(spec: str, total: int) -> set[int]:
     """Restored: The advanced selection parser (1,3,5-10)."""
     if not spec or spec.lower() == 'all': return set(range(1, total + 1))
     selected = set()

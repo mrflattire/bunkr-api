@@ -1,27 +1,34 @@
 # src/bunkr_api/media/downloader.py
-import os
-import re
-import sys
-import time
-import shutil
 import asyncio
-import threading
-import subprocess
 import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 from rich.console import Console
 from rich.progress import (
-    Progress, TextColumn, BarColumn, TaskProgressColumn, 
-    DownloadColumn, TransferSpeedColumn
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TransferSpeedColumn,
 )
 from rich.prompt import Prompt
 
-
 from ..config import DEFAULT_OUTPUT_DIR, HEADERS
-from ..utils.formatting import sanitize_filename_simple, get_album_folder_name, clean_dragged_path, parse_selection
 from ..core.tokens import mint_single_url_async
+from ..utils.formatting import (
+    clean_dragged_path,
+    get_album_folder_name,
+    parse_selection,
+    sanitize_filename_simple,
+)
 
 console = Console()
 
@@ -40,7 +47,7 @@ class DownloadEngine:
         
         try:
             cdn_url = self.db.get_valid_url(db_id) if db_id else asset_data.get("signed_cdn_url")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             progress.console.print(f"[red][-][/red] Token Error for {title}: {e}")
             cdn_url = None
 
@@ -62,7 +69,7 @@ class DownloadEngine:
             "yt-dlp", "--no-playlist", "--newline", "--continue",
             "--retries", "50", "--fragment-retries", "10", "--retry-sleep", "5",
             "--referer", "https://bunkr.cr/",
-            "--add-header", f"Origin:https://bunkr.cr",
+            "--add-header", "Origin:https://bunkr.cr",
             "--add-header", f"User-Agent:{HEADERS['User-Agent']}",
             "--progress-template", "download:PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s",
             "-o", str(dest), cdn_url
@@ -93,7 +100,8 @@ class DownloadEngine:
                         if len(parts) == 3:
                             try:
                                 progress.update(task_id, completed=int(parts[1]), total=int(parts[2]))
-                            except: pass
+                            except Exception:  # noqa: BLE001, S110
+                                pass
 
             proc.wait()
             
@@ -112,9 +120,9 @@ class DownloadEngine:
                 if db_id: self.db.update_download_status(db_id, "FAILED", error=f"Exit code {proc.returncode}")
                 return False
                 
-        except Exception as e:
-            if not self.shutdown_event.is_set():
-                if db_id: self.db.update_download_status(db_id, "FAILED", error=str(e))
+        except Exception as e:  # noqa: BLE001
+            if not self.shutdown_event.is_set() and db_id:
+                self.db.update_download_status(db_id, "FAILED", error=str(e))
             return False
         finally:
             with self.active_processes_lock:
@@ -138,7 +146,8 @@ class DownloadEngine:
                     fid = str(a.get("true_file_id") or a.get("slug_id"))
                     url = await mint_single_url_async(session, fid)
                     self.db.update_asset_url(a["db_asset_id"], url)
-                except: pass
+                except Exception:  # noqa: BLE001, S110
+                    pass
                 
         async with AsyncSession(impersonate="chrome") as session:
             await asyncio.gather(*[worker(session, a) for a in needed])
@@ -206,7 +215,8 @@ class DownloadEngine:
             with self.active_processes_lock:
                 for proc in self.active_processes.values():
                     try: proc.terminate()
-                    except: pass
+                    except Exception:  # noqa: BLE001, S110
+                        pass
             executor.shutdown(wait=False, cancel_futures=True)
             time.sleep(1)
         finally:
@@ -217,7 +227,7 @@ def prompt_for_inputs(db):
     db_albums = []
     try:
         db_albums = db.get_all_albums() or []
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         console.print(f"[bold red][-][/bold red] Warning: Could not query DB catalog: {e}")
 
     console.print()
@@ -278,6 +288,7 @@ def prompt_for_workers() -> int:
 def main():
     """Standalone CLI entry point for 'bunkr-download'."""
     import argparse
+
     from ..core.db import DatabaseManager
 
     parser = argparse.ArgumentParser(description="Bunkr Standalone Downloader CLI")
@@ -374,7 +385,7 @@ def main():
         try:
             indices = parse_selection(selection_arg, len(files_list))
             files_list = [files_list[i-1] for i in indices]
-        except Exception as e:
+        except (ValueError, TypeError, IndexError) as e:
             console.print(f"[red][!] Selection error: {e}[/red]")
             return
 

@@ -1,5 +1,6 @@
-from curl_cffi import requests
 import urllib.parse
+
+from curl_cffi import requests
 
 FILE_ID = "59975730"
 
@@ -26,7 +27,7 @@ def generate_cdn_url():
         storage_path = meta_data["path"]
         original_name = meta_data["original"]
         
-        print(f"    [+] Successfully pulled metadata.")
+        print("    [+] Successfully pulled metadata.")
         print(f"    [+] Target CDN Host: {cdn_host}")
         print(f"    [+] Storage Path:    {storage_path}")
         print(f"    [+] File Name:       {original_name}\n")
@@ -35,7 +36,7 @@ def generate_cdn_url():
         print(f"    [-] Metadata lookup failed: {e}")
         return
 
-    print(f"[*] Step 2: Requesting dynamic validation token from sign server...")
+    print("[*] Step 2: Requesting dynamic validation token from sign server...")
     encoded_path = urllib.parse.quote(storage_path)
     sign_url = f"https://glb-apisign.cdn.cr/sign?path={encoded_path}"
     
@@ -54,7 +55,7 @@ def generate_cdn_url():
         print(f"    [-] Token signature generation failed: {e}")
         return
 
-    print(f"[*] Step 3: Stitching parameters together into the final payload url...")
+    print("[*] Step 3: Stitching parameters together into the final payload url...")
     encoded_name = urllib.parse.quote(original_name)
     final_cdn_url = f"{cdn_host}{storage_path}?n={encoded_name}&token={token}&ex={ex}"
     

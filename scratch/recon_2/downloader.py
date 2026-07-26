@@ -1,7 +1,7 @@
-import json
 import argparse
-import subprocess
+import json
 import shutil
+import subprocess
 from pathlib import Path
 
 # Paths config

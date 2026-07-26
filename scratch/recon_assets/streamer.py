@@ -1,19 +1,20 @@
-import json
 import argparse
-import subprocess
-import shutil
-import sys
+import json
 import os
-import tempfile
+import shutil
 import socket
-import time
+import subprocess
+import sys
+import tempfile
 import threading
+import time
 from pathlib import Path
-from rich.prompt import Prompt
+
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, BarColumn, TextColumn
+from rich.progress import BarColumn, Progress, TextColumn
+from rich.prompt import Prompt
 
 console = Console()
 
@@ -283,14 +284,14 @@ def play_playlist_mpv(playback_queue: list):
         daemon=True
     )
 
-    console.print(f"[bold green][*][/bold green] Launching MPV engine with IPC control...")
+    console.print("[bold green][*][/bold green] Launching MPV engine with IPC control...")
     
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         poll_thread.start()
         proc.wait()
     except FileNotFoundError:
-        console.print(f"[bold red][-][/bold red] Error: 'mpv' executable not found on system PATH.")
+        console.print("[bold red][-][/bold red] Error: 'mpv' executable not found on system PATH.")
     except KeyboardInterrupt:
         console.print("\n[bold yellow][!][/bold yellow] Playback interrupted by user.")
         if 'proc' in locals():
@@ -349,7 +350,7 @@ def play_playlist_vlc(playback_queue: list):
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         proc.wait()
     except FileNotFoundError:
-        console.print(f"[bold red][-][/bold red] Error: 'vlc' executable not found on system PATH or default directories.")
+        console.print("[bold red][-][/bold red] Error: 'vlc' executable not found on system PATH or default directories.")
     except KeyboardInterrupt:
         console.print("\n[bold yellow][!][/bold yellow] Playback interrupted by user.")
         if 'proc' in locals():

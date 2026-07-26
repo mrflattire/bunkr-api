@@ -1,20 +1,23 @@
 # mint.py
+import argparse
+import asyncio
 import os
+import re
 import sys
 import time
-import json
-import re
-import asyncio
-import argparse
 import urllib.parse
-from datetime import datetime
-from pathlib import Path
 
 import urllib3
-from curl_cffi.requests import AsyncSession
 from curl_cffi.curl import CurlError
+from curl_cffi.requests import AsyncSession
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 
 # Disable warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -32,9 +35,9 @@ async def execute_request_with_retry_async(session, url, method="GET", json_payl
                 res = await session.get(url, headers=headers, timeout=timeout)
             res.raise_for_status()
             return res
-        except CurlError as e:
+        except CurlError:
             if attempt == retries:
-                raise e
+                raise
             await asyncio.sleep(delay)
 
 

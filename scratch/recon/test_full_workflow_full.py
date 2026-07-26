@@ -1,10 +1,11 @@
-import re
 import asyncio
-import subprocess
-import shutil
 import json
-from playwright.async_api import async_playwright
+import re
+import shutil
+import subprocess
+
 from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 PROFILE_DIR = r"C:\chrome-debug-profile"
@@ -210,7 +211,7 @@ async def run_scraper():
                 await asyncio.sleep(1)
 
             # Print layout overview to console
-            print(f"\n[+] Deep resolution complete. Sample records:")
+            print("\n[+] Deep resolution complete. Sample records:")
             for i, f_rec in enumerate(final_files[:20], 1):
                 id_str = f" [True ID: {f_rec['true_file_id']}]" if f_rec['true_file_id'] else " [ID: Not Found]"
                 print(f"  {i}. {f_rec['title']}{id_str}")
@@ -225,7 +226,7 @@ async def run_scraper():
             
             with open("album_files.json", "w", encoding="utf-8") as f:
                 json.dump(results, f, indent=2)
-            print(f"\n[+] Enriched results saved out to album_files.json")
+            print("\n[+] Enriched results saved out to album_files.json")
             
             # Keep browser open for inspection
             print("\n[*] Browser remains open for 20 seconds...")

@@ -1,16 +1,17 @@
-import re
-import sys
 import argparse
 import asyncio
 import json
+import re
+import sys
 import urllib.parse
-from curl_cffi.requests import AsyncSession
+
 from bs4 import BeautifulSoup
+from curl_cffi.requests import AsyncSession
 
 # Import rich components for UI rendering
 from rich.console import Console
+from rich.prompt import IntPrompt, Prompt
 from rich.table import Table
-from rich.prompt import Prompt, IntPrompt
 
 console = Console()
 
@@ -325,7 +326,7 @@ async def run_scraper():
                 await asyncio.sleep(0.5)
 
             # Print clean terminal summary sample layout 
-            console.print(f"\n[bold green][+][/bold green] Deep resolution complete. Sample records saved:")
+            console.print("\n[bold green][+][/bold green] Deep resolution complete. Sample records saved:")
             for i, f_rec in enumerate(final_files[:10], start=1):
                 id_str = f" [True ID: {f_rec['true_file_id']}]" if f_rec['true_file_id'] else " [ID: Not Found]"
                 size_str = f" ({f_rec['size']})" if f_rec['size'] else ""

@@ -1,14 +1,15 @@
-import json
 import argparse
-import subprocess
-import shutil
-import sys
+import json
 import os
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil
+import subprocess
+import sys
 import threading
-from rich.prompt import Prompt
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
 from rich.console import Console
+from rich.prompt import Prompt
 
 console = Console()
 

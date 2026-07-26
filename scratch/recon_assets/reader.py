@@ -1,14 +1,14 @@
-import sys
 import json
 import os
-import time
 import subprocess
-from datetime import datetime
+import sys
+import time
 import urllib.parse
+
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
 
 console = Console()
 
@@ -105,7 +105,7 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
 
     # Action 1: Stream targets via the streamer.py pipeline
     if action == "1":
-        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](or Press Enter for ALL)[/dim]").strip()
+        selection = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](or Press Enter for ALL)[/dim]").strip()
         if not selection:
             selection = "all"
 
@@ -122,13 +122,13 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
 
     # Action 2: Download targeted asset(s) via downloader.py
     elif action == "2":
-        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](e.g. 5 or 3,7,12 or 1-10)[/dim]").strip()
+        selection = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index, list, or range [dim](e.g. 5 or 3,7,12 or 1-10)[/dim]").strip()
         if not selection:
             console.print("[bold red][-][/bold red] Empty target configuration passed.")
             time.sleep(1)
             return None
 
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
+        workers = Prompt.ask("[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
         
         # Build command list dynamically
         cmd = [sys.executable, "rich_downloader.py", "--input", filepath, "-n", selection]
@@ -144,7 +144,7 @@ def show_interactive_options(filepath, all_files, page_files, start_idx, total_p
 
     # Action 3: Forward all asset keys to downloader.py
     elif action == "3":
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
+        workers = Prompt.ask("[bold cyan][?][/bold cyan] Enter worker concurrency (MAX=5) [dim](Press Enter for default)[/dim]").strip()
         
         # Build command list dynamically
         cmd = [sys.executable, "rich_downloader.py", "--input", filepath]

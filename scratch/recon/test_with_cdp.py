@@ -1,7 +1,8 @@
-import re
 import asyncio
-import subprocess
+import re
 import shutil
+import subprocess
+
 from playwright.async_api import async_playwright
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"

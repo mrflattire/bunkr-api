@@ -1,15 +1,21 @@
+import argparse
 import json
 import time
-import argparse
 import urllib.parse
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
+
+import urllib3
 from curl_cffi import requests
 from curl_cffi.curl import CurlError  # Catch connection reset/TLS level exceptions
-import urllib3
-
 from rich.console import Console
-from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 console = Console()

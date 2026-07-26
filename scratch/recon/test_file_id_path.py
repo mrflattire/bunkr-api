@@ -1,11 +1,12 @@
+import logging
 import os
 import re
 import urllib.parse
+
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import logging
-import urllib3
 
 # Enable request debugging
 logging.basicConfig(level=logging.DEBUG)
@@ -76,7 +77,7 @@ def resolve_file_id_and_route_b():
     except Exception as e:
         print(f"    [-] Failed to parse /f/ file page: {e}")
         print(f"    [DEBUG] Exception type: {type(e).__name__}")
-        print(f"    [DEBUG] Full error: {repr(e)}")
+        print(f"    [DEBUG] Full error: {e!r}")
         return
 
     # --- Proceed directly into your verified Route B Loop ---
@@ -109,7 +110,7 @@ def resolve_file_id_and_route_b():
         print(f"    [-] Metadata lookup failed: {e}")
         return
 
-    print(f"[*] Step 2: Requesting dynamic validation token from sign server...")
+    print("[*] Step 2: Requesting dynamic validation token from sign server...")
     encoded_path = urllib.parse.quote(storage_path)
     sign_url = f"https://glb-apisign.cdn.cr/sign?path={encoded_path}"
     
@@ -125,7 +126,7 @@ def resolve_file_id_and_route_b():
         print(f"    [-] Token signature generation failed: {e}")
         return
 
-    print(f"[*] Step 3: Stitching parameters together into the final payload url...")
+    print("[*] Step 3: Stitching parameters together into the final payload url...")
     encoded_name = urllib.parse.quote(original_name)
     final_cdn_url = f"{cdn_host}{storage_path}?n={encoded_name}&token={token}&ex={ex}"
     

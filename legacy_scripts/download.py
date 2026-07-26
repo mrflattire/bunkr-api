@@ -1,30 +1,29 @@
 # download.py
-import json
 import argparse
-import subprocess
-import shutil
-import sys
+import json
 import os
 import re
-import time
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil
+import subprocess
+import sys
 import threading
-
-from rich.prompt import Prompt
-from rich.console import Console
-from rich.progress import (
-    Progress,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-    DownloadColumn,
-    TransferSpeedColumn,
-)
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 # Core and utility imports
 from core import DatabaseManager
-from utils import format_bytes, clean_dragged_path
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TransferSpeedColumn,
+)
+from rich.prompt import Prompt
+from utils import clean_dragged_path
 
 # Paths config
 DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "bunkr_downloads"
@@ -361,8 +360,9 @@ def execute_ytdlp_task(index: int, total_files: int, asset_data: dict, slot_id: 
 
 async def resolve_download_tokens_async(indexed_files: list):
     """Parallel pre-minting token refresh sequence."""
-    from mint import mint_single_url_async, AsyncSession
     import asyncio
+
+    from mint import AsyncSession, mint_single_url_async
 
     now = int(time.time())
     needed = []
@@ -398,7 +398,8 @@ async def resolve_download_tokens_async(indexed_files: list):
             file_id = str(raw_id).strip() if raw_id is not None else None
             
             if not file_id and asset_dict.get("source_url"):
-                import re, urllib.parse
+                import re
+                import urllib.parse
                 source_url = asset_dict["source_url"]
                 match = re.search(r'/f/([^./?]+)', source_url)
                 if match:

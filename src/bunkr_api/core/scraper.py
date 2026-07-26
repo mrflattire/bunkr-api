@@ -1,17 +1,22 @@
-import re
-import json
-import asyncio
-import time
-import urllib.parse
 import argparse
+import asyncio
+import json
+import re
 import sys
-from bs4 import BeautifulSoup
+import urllib.parse
 from pathlib import Path
+
+from bs4 import BeautifulSoup
 from rich.console import Console
 
-from ..config import HEADERS, SEARCH_MODES, SORT_TYPES, TOP_CATEGORIES, VALID_COUNTS, DEFAULT_OUTPUT_DIR
-from ..utils.http import execute_request_with_retry_async
+from ..config import (
+    DEFAULT_OUTPUT_DIR,
+    HEADERS,
+    SEARCH_MODES,
+    VALID_COUNTS,
+)
 from ..utils.formatting import slugify_filename
+from ..utils.http import execute_request_with_retry_async
 
 console = Console()
 
@@ -31,7 +36,7 @@ class ScraperEngine:
         try:
             clean_val = re.sub(r'[^\d]', '', str(val))
             return int(clean_val) if clean_val else 0
-        except:
+        except Exception:  # noqa: BLE001
             return 0
 
     def standardize_top_url(self, url: str) -> str:
@@ -164,7 +169,7 @@ class ScraperEngine:
             parsed_url._replace(query=urllib.parse.urlencode(params))
         )
         
-        console.print(f"\n[bold yellow][*][/bold yellow] Navigating optimized album view ")
+        console.print("\n[bold yellow][*][/bold yellow] Navigating optimized album view ")
         
         res = await execute_request_with_retry_async(session, optimized_url, headers=HEADERS)
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -205,11 +210,11 @@ class ScraperEngine:
             
             output_filename = save_path / f"{slugify_filename(album_number_index, album_title)}.json"
             try:
-                with open(output_filename, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
+                payload = json.dumps(data, indent=2, ensure_ascii=False)
+                await asyncio.to_thread(output_filename.write_text, payload, encoding="utf-8")
                 console.print(f"[bold green][+][/bold green] Enriched results saved out to [bold white]{output_filename}[/bold white]")
-            except Exception as e:
-                print(f"[!] JSON Backup Failed: {e}")
+            except (OSError, TypeError, ValueError) as e:
+                console.print(f"[red][!] JSON Backup Failed: {e}[/red]")
 
         console.print("[bold yellow][*][/bold yellow] Syncing records with Database Manager...")
         album_id = self.db.register_album_from_json(data)
@@ -219,8 +224,6 @@ class ScraperEngine:
 
 def main():
     """Standalone CLI entry point for bunkr-scrape command."""
-    from ..core.db import DatabaseManager
-    
     parser = argparse.ArgumentParser(description="Bunkr Standalone Scraper CLI")
     parser.add_argument("search", nargs="?", default=None, help="The search query")
     parser.add_argument("-m", "--mode", choices=list(SEARCH_MODES.keys()), help="Search mode")
@@ -232,8 +235,6 @@ def main():
     
     args = parser.parse_args()
 
-    db = DatabaseManager()
-    
     url_mode = SEARCH_MODES.get(args.mode) if args.mode else None
     
     from ..cli import run_scrape_interactive, run_top_engine_interactive

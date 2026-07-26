@@ -1,6 +1,6 @@
-import cloudscraper
 import re
-import urllib.parse
+
+import cloudscraper
 
 FILE_SLUG = "fnCXw7gJ2Tcib"
 SLUG_URL = f"https://bunkr.cr/f/{FILE_SLUG}"
@@ -63,7 +63,7 @@ try:
             
             if meta_res.status_code == 200:
                 meta_data = meta_res.json()
-                print(f"    [+] Metadata retrieved successfully:")
+                print("    [+] Metadata retrieved successfully:")
                 print(f"        CDN Host: {meta_data.get('mediafiles')}")
                 print(f"        Storage Path: {meta_data.get('path')}")
                 print(f"        File Name: {meta_data.get('original')}")

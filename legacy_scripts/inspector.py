@@ -103,12 +103,11 @@ import sys
 import time
 from contextlib import closing
 
-from rich.console import Console
-from rich.table import Table
-from rich.pretty import pprint
-from rich.panel import Panel
-
 from core import DatabaseManager
+from rich.console import Console
+from rich.panel import Panel
+from rich.pretty import pprint
+from rich.table import Table
 from utils import format_bytes
 
 console = Console()

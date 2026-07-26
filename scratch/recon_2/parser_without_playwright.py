@@ -1,9 +1,10 @@
-import re
 import asyncio
 import json
-import urllib.parse
-from curl_cffi.requests import AsyncSession
+import re
+
 from bs4 import BeautifulSoup
+from curl_cffi.requests import AsyncSession
+
 
 def parse_albums_from_html(html):
     """Extract album information from search results page"""
@@ -152,7 +153,7 @@ async def run_scraper():
                 await asyncio.sleep(0.5)
 
             # Print quick terminal sample visualization
-            print(f"\n[+] Deep resolution complete. Sample records:")
+            print("\n[+] Deep resolution complete. Sample records:")
             for i, f_rec in enumerate(final_files[:20], 1):
                 id_str = f" [True ID: {f_rec['true_file_id']}]" if f_rec['true_file_id'] else " [ID: Not Found]"
                 print(f"  {i}. {f_rec['title']}{id_str}")
@@ -167,7 +168,7 @@ async def run_scraper():
             
             with open("album_files.json", "w", encoding="utf-8") as f:
                 json.dump(results, f, indent=2)
-            print(f"\n[+] Enriched results saved out to album_files.json")
+            print("\n[+] Enriched results saved out to album_files.json")
             
         except Exception as e:
             print(f"[-] Error: {e}")

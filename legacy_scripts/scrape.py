@@ -1,22 +1,22 @@
 # scrape.py
-import re
-import sys
 import argparse
 import asyncio
 import json
+import re
 import urllib.parse
-from curl_cffi.requests import AsyncSession
-from curl_cffi.curl import CurlError  # Catch connection reset/TLS layer exceptions
-from bs4 import BeautifulSoup
 
-# Import rich components for UI rendering
-from rich.console import Console
-from rich.table import Table
-from rich.prompt import Prompt, IntPrompt
+from bs4 import BeautifulSoup
 
 # Core database and utility engine imports
 from core import DatabaseManager
-from utils import clean_dragged_path, slugify_filename
+from curl_cffi.curl import CurlError  # Catch connection reset/TLS layer exceptions
+from curl_cffi.requests import AsyncSession
+
+# Import rich components for UI rendering
+from rich.console import Console
+from rich.prompt import IntPrompt, Prompt
+from rich.table import Table
+from utils import slugify_filename
 
 console = Console()
 db = DatabaseManager()
@@ -73,7 +73,7 @@ async def fetch_with_retry_async(session, url, retries=3, delay=1, timeout=30):
             return res
         except CurlError as e:
             if attempt == retries:
-                raise e
+                raise
             console.print(f"  [bold yellow][!][/bold yellow] Network glitch caught ({e}). Retrying in {delay}s... (Attempt {attempt}/{retries})")
             await asyncio.sleep(delay)
 

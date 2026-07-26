@@ -1,8 +1,9 @@
 import argparse
 import urllib.parse
+
 from rich.console import Console
+from rich.prompt import IntPrompt, Prompt
 from rich.table import Table
-from rich.prompt import Prompt, IntPrompt
 
 console = Console()
 

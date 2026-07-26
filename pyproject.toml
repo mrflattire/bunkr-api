@@ -6,6 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "bunkr-api"
 version = "0.1.0-beta.1"
 description = "Interactive Python API wrapper for Bunkr"
+
+requires-python = ">=3.12"
+
 dependencies = [
     "rich>=13.0.0",
     "curl_cffi>=0.7.0",
@@ -24,3 +27,39 @@ bunkr-inspect = "bunkr_api.inspector:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.0",
+]
+
+[tool.ruff]
+line-length = 100  
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes (catches undefined variables, syntax issues)
+    "I",      # isort (import sorting)
+    "UP",     # pyupgrade (modernize Python syntax)
+    "SIM",    # flake8-simplify (catches SIM118, SIM102, etc.)
+    "S",      # flake8-bandit (security / S112)
+    "PL",     # Pylint rules (PLW1510)
+    "RUF100", # Warns about unused # noqa directives
+]
+
+ignore = [
+    "BLE001", # Blind except
+    "S110",   # try-except-pass
+    "DTZ",    # Timezone naive datetimes
+    "E722",   # Bare except
+    "SIM102", # Collapsible if
+    "UP031",  # Allow % string formatting
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"src/bunkr_api/cli.py" = ["ALL"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true

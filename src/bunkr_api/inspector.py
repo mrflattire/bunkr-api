@@ -1,12 +1,12 @@
 import argparse
 import sqlite3
-import sys
 import time
 from contextlib import closing
+
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
 
 # import from other modules
 from .core.db import DatabaseManager
@@ -53,8 +53,8 @@ class Inspector:
             console.print(f"[bold white]{len(rows)} row(s):[/bold white]")
             for row in rows:
                 console.print(f"[bold cyan]--- id={row['id']} ---[/bold cyan]")
-                for key in row.keys():
-                    console.print(f"  [dim]{key}:[/dim] {row[key]}", soft_wrap=True, highlight=False)
+                for key, value in row.items():
+                    console.print(f"  [dim]{key}:[/dim] {value}", soft_wrap=True, highlight=False)
                 console.print()
 
     def display_dashboard(self):
@@ -69,7 +69,8 @@ class Inspector:
 
             def safe_count(sql):
                 try: return str(conn.execute(sql).fetchone()[0])
-                except: return "?"
+                except Exception: # noqa: BLE001 
+                    return "?"
 
             for table in tables:
                 count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -145,14 +146,14 @@ class Inspector:
                 return
             
             console.print(f"[bold magenta]Album Detail: #{album['id']}[/bold magenta]")
-            for k in album.keys():
-                console.print(f"  [dim]{k}:[/dim] {album[k]}", soft_wrap=True)
+            for k, v in album.items():
+                console.print(f"  [dim]{k}:[/dim] {v}", soft_wrap=True)
 
             assets = conn.execute("SELECT * FROM assets WHERE album_id=? ORDER BY track_number ASC", (album_id,)).fetchall()
             for r in assets:
                 console.print(f"\n[bold cyan]--- Asset ID: {r['id']} (Track {r['track_number']}) ---[/bold cyan]")
-                for k in r.keys():
-                    console.print(f"  [dim]{k}:[/dim] {r[k]}", soft_wrap=True, highlight=False)
+                for k, v in r.items():
+                    console.print(f"  [dim]{k}:[/dim] {v}", soft_wrap=True, highlight=False)
 
     def display_expiring(self):
         """Report for assets requiring token renewal."""
@@ -287,7 +288,7 @@ class Inspector:
                 verb = "staged" if state else "unstaged"
                 
                 console.print(f"[green]Successfully {verb} {cursor.rowcount} {target}(s).[/green]")
-            except Exception as e:
+            except (sqlite3.Error, ValueError, TypeError) as e:
                 console.print(f"[red]Error: {e}[/red]")
 
     def wipe(self, album_ids=None, force=False):
@@ -326,7 +327,7 @@ class Inspector:
                     # cursor.rowcount here, not len(ids) — same reporting-
                     # accuracy issue as toggle_staging otherwise.
                     console.print(f"[green]Deleted {cursor.rowcount} album(s).[/green]")
-                except Exception as e:
+                except sqlite3.Error as e:
                     console.print(f"[red]Wipe failed: {e}[/red]")
 
     def nuke(self):

@@ -1,8 +1,10 @@
-import json
 import argparse
+import json
 import urllib.parse
 from pathlib import Path
+
 from curl_cffi import requests
+
 
 def parse_arguments():
     """Parse command line arguments for the signature minter script."""

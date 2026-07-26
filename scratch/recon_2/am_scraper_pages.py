@@ -1,17 +1,17 @@
-import re
-import sys
 import argparse
 import asyncio
 import json
+import re
 import urllib.parse
-from curl_cffi.requests import AsyncSession
-from curl_cffi.curl import CurlError  # Catch connection reset/TLS layer exceptions
+
 from bs4 import BeautifulSoup
+from curl_cffi.curl import CurlError  # Catch connection reset/TLS layer exceptions
+from curl_cffi.requests import AsyncSession
 
 # Import rich components for UI rendering
 from rich.console import Console
+from rich.prompt import IntPrompt, Prompt
 from rich.table import Table
-from rich.prompt import Prompt, IntPrompt
 
 console = Console()
 

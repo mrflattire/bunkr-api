@@ -2,10 +2,9 @@
 import sqlite3
 import time
 from contextlib import closing, contextmanager
-from typing import List, Optional
 
 # Decoupled utilities are imported from utils.py to maintain thin DB context
-from utils import clean_dragged_path, slugify_filename, extract_expiry_from_url
+from utils import extract_expiry_from_url
 
 
 class DatabaseManager:
@@ -193,11 +192,11 @@ class DatabaseManager:
 
             return album_id
 
-    def get_all_albums(self) -> List[sqlite3.Row]:
+    def get_all_albums(self) -> list[sqlite3.Row]:
         with closing(self._get_connection()) as conn:
             return conn.execute("SELECT * FROM albums ORDER BY updated_at DESC;").fetchall()
 
-    def get_album_assets(self, album_id: int) -> List[sqlite3.Row]:
+    def get_album_assets(self, album_id: int) -> list[sqlite3.Row]:
         with closing(self._get_connection()) as conn:
             return conn.execute(
                 "SELECT * FROM assets WHERE album_id = ? ORDER BY track_number ASC;", (album_id,)
@@ -212,7 +211,7 @@ class DatabaseManager:
                     (new_cdn_url, expiry_ts, asset_id)
                 )
 
-    def update_download_status(self, asset_id: int, status: str, local_path: Optional[str] = None, error: Optional[str] = None):
+    def update_download_status(self, asset_id: int, status: str, local_path: str | None = None, error: str | None = None):
         with closing(self._get_connection()) as conn:
             with conn:
                 conn.execute(
@@ -222,7 +221,7 @@ class DatabaseManager:
 
     # --- THE HYBRID MINTER CORE API ---
 
-    def get_needs_refresh(self, album_id: Optional[int] = None) -> List[sqlite3.Row]:
+    def get_needs_refresh(self, album_id: int | None = None) -> list[sqlite3.Row]:
         """
         Retrieves assets whose signatures expire within our lookahead window.
         Pass album_id to scope the query to one album at the SQL level —

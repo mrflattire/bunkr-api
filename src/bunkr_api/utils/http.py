@@ -1,4 +1,5 @@
 import asyncio
+
 import urllib3
 from curl_cffi.curl import CurlError
 
@@ -13,6 +14,6 @@ async def execute_request_with_retry_async(session, url, method="GET", json_payl
                 res = await session.get(url, headers=headers, verify=False, timeout=timeout)
             res.raise_for_status()
             return res
-        except CurlError as e:
-            if attempt == retries: raise e
+        except CurlError:
+            if attempt == retries: raise
             await asyncio.sleep(delay)

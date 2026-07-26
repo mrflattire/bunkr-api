@@ -1,22 +1,23 @@
-import json
-import socket
-import time
-import threading
-import subprocess
-import tempfile
-import shutil
-import os
 import asyncio
+import json
+import os
+import shutil
+import socket
+import sqlite3
+import subprocess
 import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
 
+from curl_cffi.requests.errors import CurlError
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, BarColumn, TextColumn
+from rich.progress import BarColumn, Progress, TextColumn
 from rich.prompt import Prompt
 
-# Internal package imports
 from ..core.tokens import mint_single_url_async
 from ..utils.formatting import clean_dragged_path, parse_selection
 
@@ -31,8 +32,8 @@ class PlayerEngine:
         if os.name == 'nt':
             try:
                 return open(ipc_path, 'r+b', buffering=0)
-            except Exception as e:
-                raise ConnectionError(f"Failed to open Windows named pipe {ipc_path}: {e}")
+            except OSError as e:
+                raise ConnectionError(f"Failed to open Windows named pipe {ipc_path}: {e}") from e
         else:
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             sock.connect(ipc_path)
@@ -47,7 +48,8 @@ class PlayerEngine:
                 try:
                     sock_file = self.connect_to_ipc(ipc_path)
                     break
-                except: pass
+                except Exception:  # noqa: BLE001, S110
+                    pass
             time.sleep(0.1)
 
         if not sock_file: return
@@ -77,7 +79,8 @@ class PlayerEngine:
                 if os.name == 'nt': sock_file.write(payload.encode('utf-8'))
                 else: sock_file.write(payload)
             if os.name != 'nt': sock_file.flush()
-        except: return
+        except Exception:  # noqa: BLE001
+            return
 
         progress_bar = Progress(
             TextColumn("[bold cyan]{task.description}"),
@@ -129,10 +132,13 @@ class PlayerEngine:
                             duration=fmt_time(state['duration']),
                             cache_duration=f"{cache_val:.1f}" if cache_val is not None else "0.0" # RESTORED: precision float
                         )
-                except: continue
+                except Exception as e:  # noqa: BLE001
+                    console.print(f"[dim red]IPC polling read error: {e}[/dim red]")
+                    continue
         try: sock_file.close()
-        except: pass
-
+        except (OSError, AttributeError):
+            pass
+        
     async def resolve_tokens_async(self, assets):
         """Parallel token refresh for streaming with NULL safety."""
         from curl_cffi.requests import AsyncSession
@@ -159,7 +165,7 @@ class PlayerEngine:
                     fid = str(a.get("true_file_id") or a.get("slug_id"))
                     url = await mint_single_url_async(session, fid)
                     self.db.update_asset_url(a["id"], url)
-                except Exception as e:
+                except (TimeoutError, CurlError, sqlite3.Error, KeyError, TypeError, AttributeError) as e:
                     console.print(f"[dim red]Minting failed for {a.get('title')[:20]}: {e}[/dim red]")
         
         async with AsyncSession(impersonate="chrome") as session:
@@ -175,7 +181,7 @@ class PlayerEngine:
                 for idx, title, url in playback_queue:
                     f.write(f"#EXTINF:-1,{idx}. {title}\n{url}\n")
                 p_path = f.name
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             console.print(f"[bold red][-][/bold red] Failed to generate temporary play-queue file: {e}")
             return
 
@@ -183,7 +189,7 @@ class PlayerEngine:
         stop_event = threading.Event()
         poll_thread = threading.Thread(target=self.poll_mpv_status, args=(ipc, stop_event, len(playback_queue)), daemon=True)
 
-        console.print(f"[bold green][*][/bold green] Launching MPV engine with IPC control...")
+        console.print("[bold green][*][/bold green] Launching MPV engine with IPC control...")
 
         try:
             proc = subprocess.Popen(["mpv", "--force-window", f"--input-ipc-server={ipc}", "--idle=once", p_path],
@@ -191,7 +197,7 @@ class PlayerEngine:
             poll_thread.start()
             proc.wait()
         except FileNotFoundError:
-            console.print(f"[bold red][-][/bold red] Error: 'mpv' executable not found on system PATH.")
+            console.print("[bold red][-][/bold red] Error: 'mpv' executable not found on system PATH.")
         except KeyboardInterrupt:
             console.print("\n[bold yellow][!][/bold yellow] Playback interrupted by user.")
             if 'proc' in locals(): proc.terminate()
@@ -210,7 +216,7 @@ class PlayerEngine:
                 for idx, title, url in playback_queue:
                     f.write(f"#EXTINF:-1,{idx}. {title}\n{url}\n")
                 p_path = f.name
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             console.print(f"[bold red][-][/bold red] Failed to generate temporary play-queue file: {e}")
             return
         
@@ -220,7 +226,7 @@ class PlayerEngine:
             
         console.print("[bold green][*][/bold green] Streaming via VLC... close the window to return.")
         try:
-            subprocess.run([vlc, p_path])
+            subprocess.run([vlc, p_path], check=False)
         finally:
             if os.path.exists(p_path): os.unlink(p_path)
             console.print("[bold green][+][/bold green] Player session closed safely.")
@@ -230,7 +236,7 @@ def prompt_for_inputs(db):
     db_albums = []
     try:
         db_albums = db.get_all_albums() or []
-    except Exception as e:
+    except (sqlite3.Error, KeyError, AttributeError) as e:
         console.print(f"[bold red][-][/bold red] Warning: Could not query DB catalog: {e}")
 
     console.print()
@@ -282,6 +288,7 @@ def prompt_for_inputs(db):
 def main():
     """Standalone CLI entry point for 'bunkr-stream'."""
     import argparse
+
     from ..core.db import DatabaseManager
 
     parser = argparse.ArgumentParser(description="bunkr-api Standalone Streamer CLI")

@@ -1,7 +1,5 @@
-import subprocess
-import json
 import re
-import urllib.parse
+import subprocess
 
 FILE_SLUG = "fnCXw7gJ2Tcib"
 SLUG_URL = f"https://bunkr.cr/f/{FILE_SLUG}"

@@ -1,11 +1,13 @@
-import re
-import sys
 import argparse
 import asyncio
 import json
+import re
+import sys
 import urllib.parse
-from curl_cffi.requests import AsyncSession
+
 from bs4 import BeautifulSoup
+from curl_cffi.requests import AsyncSession
+
 
 def parse_arguments():
     """Parse command line arguments for the script"""
@@ -231,7 +233,7 @@ async def run_scraper():
                 await asyncio.sleep(0.5)
 
             # Print quick terminal sample visualization
-            print(f"\n[+] Deep resolution complete. Sample records:")
+            print("\n[+] Deep resolution complete. Sample records:")
             for i, f_rec in enumerate(final_files[:20], 1):
                 id_str = f" [True ID: {f_rec['true_file_id']}]" if f_rec['true_file_id'] else " [ID: Not Found]"
                 size_str = f" ({f_rec['size']})" if f_rec['size'] else ""

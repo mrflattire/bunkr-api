@@ -1,7 +1,7 @@
 # utils.py
 import re
 import urllib.parse
-from typing import Optional
+
 
 def format_bytes(num_bytes) -> str:
     """Converts raw integer bytes into a clean, human-readable string format."""
@@ -43,7 +43,7 @@ def slugify_filename(idx: int, title: str) -> str:
     return f"{idx:02d}_{base_name}"
 
 
-def extract_expiry_from_url(url_str: Optional[str]) -> Optional[int]:
+def extract_expiry_from_url(url_str: str | None) -> int | None:
     """
     Parses a URL query string to locate and extract the 'ex' expiration timestamp.
     """

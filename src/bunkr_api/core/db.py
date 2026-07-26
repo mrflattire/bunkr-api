@@ -1,11 +1,11 @@
 import sqlite3
 import time
 from contextlib import closing, contextmanager
-from typing import List, Optional
 
 # Internal package imports
 from ..config import DB_PATH
 from ..utils.formatting import extract_expiry_from_url
+
 
 class DatabaseManager:
     def __init__(self, db_path: str = DB_PATH):
@@ -146,26 +146,24 @@ class DatabaseManager:
 
             return album_id
 
-    def get_all_albums(self) -> List[sqlite3.Row]:
+    def get_all_albums(self) -> list[sqlite3.Row]:
         with closing(self._get_connection()) as conn:
             return conn.execute("SELECT * FROM albums ORDER BY updated_at DESC;").fetchall()
 
-    def get_album_assets(self, album_id: int) -> List[sqlite3.Row]:
+    def get_album_assets(self, album_id: int) -> list[sqlite3.Row]:
         with closing(self._get_connection()) as conn:
             return conn.execute("SELECT * FROM assets WHERE album_id = ? ORDER BY track_number ASC;", (album_id,)).fetchall()
 
     def update_asset_url(self, asset_id: int, new_cdn_url: str):
         expiry_ts = extract_expiry_from_url(new_cdn_url)
-        with closing(self._get_connection()) as conn:
-            with conn:
-                conn.execute("UPDATE assets SET signed_cdn_url = ?, token_expiry_timestamp = ? WHERE id = ?", (new_cdn_url, expiry_ts, asset_id))
+        with closing(self._get_connection()) as conn, conn:
+            conn.execute("UPDATE assets SET signed_cdn_url = ?, token_expiry_timestamp = ? WHERE id = ?", (new_cdn_url, expiry_ts, asset_id))
 
-    def update_download_status(self, asset_id: int, status: str, local_path: Optional[str] = None, error: Optional[str] = None):
-        with closing(self._get_connection()) as conn:
-            with conn:
-                conn.execute("UPDATE assets SET download_status = ?, local_file_path = ?, error_message = ? WHERE id = ?", (status, local_path, error, asset_id))
+    def update_download_status(self, asset_id: int, status: str, local_path: str | None = None, error: str | None = None):
+        with closing(self._get_connection()) as conn, conn:
+            conn.execute("UPDATE assets SET download_status = ?, local_file_path = ?, error_message = ? WHERE id = ?", (status, local_path, error, asset_id))
 
-    def get_needs_refresh(self, album_id: Optional[int] = None) -> List[sqlite3.Row]:
+    def get_needs_refresh(self, album_id: int | None = None) -> list[sqlite3.Row]:
         lookahead = int(self.get_config_val("token_buffer_seconds", "600"))
         now_with_buffer = int(time.time()) + lookahead
         with closing(self._get_connection()) as conn:

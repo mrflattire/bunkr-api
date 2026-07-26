@@ -1,7 +1,9 @@
 import asyncio
-from playwright.async_api import async_playwright
 import json
 from datetime import datetime
+
+from playwright.async_api import async_playwright
+
 
 async def establish_session():
     """Uses browser to establish complete session chain and extract cookies"""
@@ -90,7 +92,7 @@ async def establish_session():
             cookies_dict = {cookie['name']: cookie['value'] for cookie in final_cookies}
             with open("session_cookies.json", "w") as f:
                 json.dump(cookies_dict, f, indent=2)
-            print(f"[+] Cookies saved to session_cookies.json")
+            print("[+] Cookies saved to session_cookies.json")
             
             # Save page content to file
             with open("file_page.html", "w", encoding="utf-8") as f:

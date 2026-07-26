@@ -1,14 +1,21 @@
-import json
 import argparse
+import json
 import urllib.parse
-from pathlib import Path
 from datetime import datetime, timedelta
-from curl_cffi import requests
+from pathlib import Path
+
 import urllib3
+from curl_cffi import requests
 
 # Bring in rich components for a consistent UI layout
 from rich.console import Console
-from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 # Suppress insecure request warnings from verify=False to prevent console clutter
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

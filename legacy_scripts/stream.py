@@ -1,24 +1,23 @@
 # stream.py
-import json
 import argparse
-import subprocess
-import shutil
-import sys
+import json
 import os
-import tempfile
+import shutil
 import socket
-import time
+import subprocess
+import sys
+import tempfile
 import threading
+import time
 from pathlib import Path
-
-from rich.prompt import Prompt
-from rich.console import Console
-from rich.live import Live
-from rich.panel import Panel
-from rich.progress import Progress, BarColumn, TextColumn
 
 # Core database and utility engine imports
 from core import DatabaseManager
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, TextColumn
+from rich.prompt import Prompt
 from utils import clean_dragged_path
 
 console = Console()
@@ -284,14 +283,14 @@ def play_playlist_mpv(playback_queue: list):
         daemon=True
     )
 
-    console.print(f"[bold green][*][/bold green] Launching MPV engine with IPC control...")
+    console.print("[bold green][*][/bold green] Launching MPV engine with IPC control...")
     
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         poll_thread.start()
         proc.wait()
     except FileNotFoundError:
-        console.print(f"[bold red][-][/bold red] Error: 'mpv' executable not found on system PATH.")
+        console.print("[bold red][-][/bold red] Error: 'mpv' executable not found on system PATH.")
     except KeyboardInterrupt:
         console.print("\n[bold yellow][!][/bold yellow] Playback interrupted by user.")
         if 'proc' in locals():
@@ -347,7 +346,7 @@ def play_playlist_vlc(playback_queue: list):
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         proc.wait()
     except FileNotFoundError:
-        console.print(f"[bold red][-][/bold red] Error: 'vlc' executable not found on system PATH or default directories.")
+        console.print("[bold red][-][/bold red] Error: 'vlc' executable not found on system PATH or default directories.")
     except KeyboardInterrupt:
         console.print("\n[bold yellow][!][/bold yellow] Playback interrupted by user.")
         if 'proc' in locals():
@@ -441,8 +440,9 @@ def prompt_for_inputs():
 
 async def resolve_selected_assets_async(db_assets: list):
     """Parallel token refresh sequence for streaming operations."""
-    from mint import mint_single_url_async, AsyncSession
     import asyncio
+
+    from mint import AsyncSession, mint_single_url_async
     
     now = int(time.time())
     needed = []
@@ -478,7 +478,8 @@ async def resolve_selected_assets_async(db_assets: list):
             file_id = str(raw_id).strip() if raw_id is not None else None
             
             if not file_id and asset_dict.get("source_url"):
-                import re, urllib.parse
+                import re
+                import urllib.parse
                 source_url = asset_dict["source_url"]
                 match = re.search(r'/f/([^./?]+)', source_url)
                 if match:

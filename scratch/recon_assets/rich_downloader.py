@@ -1,23 +1,23 @@
-import json
 import argparse
-import subprocess
-import shutil
-import sys
+import json
 import os
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil
+import subprocess
+import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
-from rich.prompt import Prompt
 from rich.console import Console
 from rich.progress import (
-    Progress,
-    TextColumn,
     BarColumn,
-    TaskProgressColumn,
     DownloadColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
     TransferSpeedColumn,
 )
+from rich.prompt import Prompt
 
 # Paths config
 DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "bunkr_downloads"

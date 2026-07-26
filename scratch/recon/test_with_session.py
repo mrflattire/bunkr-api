@@ -1,6 +1,6 @@
-import cloudscraper
 import re
-import urllib.parse
+
+import cloudscraper
 
 # Step 1: Visit the album page to establish session
 ALBUM_URL = "https://bunkr.cr/a/y87ymnDI"
@@ -37,7 +37,7 @@ try:
     
 except Exception as e:
     print(f"    [-] Album visit failed: {e}")
-    print(f"    [*] Continuing with manual cookies...")
+    print("    [*] Continuing with manual cookies...")
 
 # Step 2: Now visit the file page with established session
 print(f"\n[*] Step 0B: Visiting file page using established session: {FILE_URL}...")

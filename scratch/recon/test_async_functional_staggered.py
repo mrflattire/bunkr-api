@@ -1,15 +1,21 @@
-import json
-import asyncio
 import argparse
-import urllib.parse
+import asyncio
+import json
 import sys
+import urllib.parse
 from pathlib import Path
-from curl_cffi.requests import AsyncSession
-from curl_cffi.curl import CurlError
-import urllib3
 
+import urllib3
+from curl_cffi.curl import CurlError
+from curl_cffi.requests import AsyncSession
 from rich.console import Console
-from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 console = Console()

@@ -1,11 +1,8 @@
 # core.py
 import sqlite3
 import time
-import os
 import urllib.parse
 from contextlib import closing
-from pathlib import Path
-from typing import List, Optional, Dict
 
 
 class DatabaseManager:
@@ -155,11 +152,11 @@ class DatabaseManager:
 
             return album_id
 
-    def get_all_albums(self) -> List[sqlite3.Row]:
+    def get_all_albums(self) -> list[sqlite3.Row]:
         with closing(self._get_connection()) as conn:
             return conn.execute("SELECT * FROM albums ORDER BY updated_at DESC;").fetchall()
 
-    def get_album_assets(self, album_id: int) -> List[sqlite3.Row]:
+    def get_album_assets(self, album_id: int) -> list[sqlite3.Row]:
         with closing(self._get_connection()) as conn:
             return conn.execute(
                 "SELECT * FROM assets WHERE album_id = ? ORDER BY track_number ASC;", (album_id,)
@@ -174,7 +171,7 @@ class DatabaseManager:
                     (new_cdn_url, expiry_ts, asset_id)
                 )
 
-    def update_download_status(self, asset_id: int, status: str, local_path: Optional[str] = None, error: Optional[str] = None):
+    def update_download_status(self, asset_id: int, status: str, local_path: str | None = None, error: str | None = None):
         with closing(self._get_connection()) as conn:
             with conn:
                 conn.execute(
@@ -184,7 +181,7 @@ class DatabaseManager:
 
     # --- THE HYBRID MINTER CORE API ---
 
-    def get_needs_refresh(self) -> List[sqlite3.Row]:
+    def get_needs_refresh(self) -> list[sqlite3.Row]:
         """
         Retrieves assets whose signatures expire within our lookahead window.
         Backed by idx_assets_expiry, so this stays fast as the library grows.
@@ -237,7 +234,7 @@ def format_bytes(num_bytes) -> str:
         num_bytes /= 1024.0
     return f"{num_bytes:.2f} PB"
 
-def extract_expiry_from_url(url_str: Optional[str]) -> Optional[int]:
+def extract_expiry_from_url(url_str: str | None) -> int | None:
     if not url_str:
         return None
     try:

@@ -1,17 +1,17 @@
 # read.py
-import sys
 import json
 import os
-import time
 import subprocess
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.prompt import Prompt
+import sys
+import time
 
 # Import core manager and the isolated utility library functions
 from core import DatabaseManager
-from utils import format_bytes, clean_dragged_path, extract_expiry_from_url
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.table import Table
+from utils import clean_dragged_path, format_bytes
 
 console = Console()
 db = DatabaseManager()
@@ -107,7 +107,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
 
     # Action 2: Download targeted assets
     if action == "2":
-        selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, range, or 'staged'").strip()
+        selection = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index, list, range, or 'staged'").strip()
         if not selection: return None
 
         is_staged_mode = selection.lower() == "staged"
@@ -119,7 +119,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
                 time.sleep(1.5)
                 return None
 
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Worker concurrency (MAX=5)", default="").strip()
+        workers = Prompt.ask("[bold cyan][?][/bold cyan] Worker concurrency (MAX=5)", default="").strip()
         
         if is_staged_mode:
             cmd = [sys.executable, "download.py", "--db-id", str(album_id), "--staged"]
@@ -139,7 +139,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
         return "2"  # signal caller to reload all_assets — download may have minted fresh tokens
     # Action 3: Forward all keys
     elif action == "3":
-        workers = Prompt.ask(f"[bold cyan][?][/bold cyan] Worker concurrency (MAX=5)", default="").strip()
+        workers = Prompt.ask("[bold cyan][?][/bold cyan] Worker concurrency (MAX=5)", default="").strip()
         cmd = [sys.executable, "download.py", "--db-id", str(album_id)]
         if workers: cmd.extend(["-w", workers])
         subprocess.run(cmd)
@@ -256,7 +256,7 @@ def render_db_dashboard(album_id):
             elif nav_action == "p":
                 current_page -= 1
             elif nav_action == "1":
-                selection = Prompt.ask(f"[bold cyan][?][/bold cyan] Enter item index, list, range, or 'staged' [dim](or Press Enter for ALL)[/dim]").strip()
+                selection = Prompt.ask("[bold cyan][?][/bold cyan] Enter item index, list, range, or 'staged' [dim](or Press Enter for ALL)[/dim]").strip()
                 if not selection:
                     selection = "all"
                 
