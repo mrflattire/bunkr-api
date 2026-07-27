@@ -27,7 +27,7 @@ env/
 *.egg-info/
 
 # Ignore the tests directory and everything inside it
-tests/
+#tests/
 
 # Ignore the downloads directory and everything inside it
 downloads/
@@ -36,6 +36,6 @@ downloads/
 *.db-wal
 *.db-shm
  
-# The database itself is local runtime state, not source — excluded since
+# The database itself is local runtime state, not source. excluded since
 # signed_cdn_url entries carry live auth tokens that shouldn't sit in git history
 *.db

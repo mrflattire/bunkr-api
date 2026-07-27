@@ -179,7 +179,7 @@ def daemon_loop(album_id: int | None = None):
         except KeyboardInterrupt:
             console.print("\n[yellow][!][/yellow] Minter shut down.")
             break
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             console.print(f"[bold red][x] Minter Error:[/bold red] {e}")
             if album_id:
                 break

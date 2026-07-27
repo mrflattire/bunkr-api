@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import suppress
 from pathlib import Path
 
 from rich.console import Console
@@ -47,7 +48,7 @@ class DownloadEngine:
         
         try:
             cdn_url = self.db.get_valid_url(db_id) if db_id else asset_data.get("signed_cdn_url")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             progress.console.print(f"[red][-][/red] Token Error for {title}: {e}")
             cdn_url = None
 
@@ -98,10 +99,8 @@ class DownloadEngine:
                     if line.startswith("PROGRESS "):
                         parts = line.split()
                         if len(parts) == 3:
-                            try:
+                            with suppress(Exception):
                                 progress.update(task_id, completed=int(parts[1]), total=int(parts[2]))
-                            except Exception:  # noqa: BLE001, S110
-                                pass
 
             proc.wait()
             
@@ -120,7 +119,7 @@ class DownloadEngine:
                 if db_id: self.db.update_download_status(db_id, "FAILED", error=f"Exit code {proc.returncode}")
                 return False
                 
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if not self.shutdown_event.is_set() and db_id:
                 self.db.update_download_status(db_id, "FAILED", error=str(e))
             return False
@@ -146,7 +145,7 @@ class DownloadEngine:
                     fid = str(a.get("true_file_id") or a.get("slug_id"))
                     url = await mint_single_url_async(session, fid)
                     self.db.update_asset_url(a["db_asset_id"], url)
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 
         async with AsyncSession(impersonate="chrome") as session:
@@ -214,9 +213,8 @@ class DownloadEngine:
             console.print("\n[bold yellow][!] Interrupt detected. Cleaning up...[/bold yellow]")
             with self.active_processes_lock:
                 for proc in self.active_processes.values():
-                    try: proc.terminate()
-                    except Exception:  # noqa: BLE001, S110
-                        pass
+                    with suppress(Exception):
+                        proc.terminate()
             executor.shutdown(wait=False, cancel_futures=True)
             time.sleep(1)
         finally:
@@ -227,7 +225,7 @@ def prompt_for_inputs(db):
     db_albums = []
     try:
         db_albums = db.get_all_albums() or []
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         console.print(f"[bold red][-][/bold red] Warning: Could not query DB catalog: {e}")
 
     console.print()
@@ -363,7 +361,7 @@ def main():
                 files_list.append(d)
 
     elif input_json_path:
-        with open(input_json_path, "r", encoding="utf-8") as f:
+        with open(input_json_path, encoding="utf-8") as f:
             data = json.load(f)
         meta = data.get("selected_album", {})
         for item in data.get("files_found", []):

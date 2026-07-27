@@ -37,7 +37,7 @@ def extract_expiry_from_url(url_str: str | None) -> int | None:
         parsed = urllib.parse.urlparse(url_str)
         q = dict(urllib.parse.parse_qsl(parsed.query))
         return int(q['ex']) if 'ex' in q else None
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 def parse_and_check_expiry(expiry: int | None) -> str:
@@ -56,9 +56,7 @@ def parse_selection(spec: str, total: int) -> set[int]:
     """Restored: The advanced selection parser (1,3,5-10)."""
     if not spec or spec.lower() == 'all': return set(range(1, total + 1))
     selected = set()
-    for chunk in spec.split(","):
-        chunk = chunk.strip()
-        if not chunk: continue
+    for chunk in (c.strip() for c in spec.split(",") if c.strip()):
         if "-" in chunk:
             try:
                 start_str, end_str = chunk.split("-", 1)

@@ -30,8 +30,14 @@ where = ["src"]
 
 [dependency-groups]
 dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.16.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100  
@@ -55,7 +61,17 @@ ignore = [
     "E722",   # Bare except
     "SIM102", # Collapsible if
     "UP031",  # Allow % string formatting
+    # --- New noise filters ---
+    "E501",   # Line too long (110 violations - Rich markup strings)
+    "E701",   # Multiple statements on one line with colon (e.g. `if cond: return`)
+    "E702",   # Multiple statements on one line with semicolon
+    "PLR",    # Pylint refactor limits (too-many-branches, arguments, statements, magic values)
+    "PLC0415",# Import outside top-level (useful for CLI lazy imports)
+    "S603",   # subprocess without shell=True
+    "S607",   # Start process with partial path (e.g., calling 'mpv' or 'vlc' directly)
+    "S608",   # Hardcoded SQL expression (false positives on dynamic placeholder strings)
 ]
+
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

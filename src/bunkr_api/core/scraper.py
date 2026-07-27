@@ -36,7 +36,7 @@ class ScraperEngine:
         try:
             clean_val = re.sub(r'[^\d]', '', str(val))
             return int(clean_val) if clean_val else 0
-        except Exception:  # noqa: BLE001
+        except Exception:
             return 0
 
     def standardize_top_url(self, url: str) -> str:

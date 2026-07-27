@@ -69,7 +69,7 @@ class Inspector:
 
             def safe_count(sql):
                 try: return str(conn.execute(sql).fetchone()[0])
-                except Exception: # noqa: BLE001 
+                except Exception:
                     return "?"
 
             for table in tables:

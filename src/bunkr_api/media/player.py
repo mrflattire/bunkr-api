@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import suppress
 from pathlib import Path
 
 from curl_cffi.requests.errors import CurlError
@@ -48,7 +49,7 @@ class PlayerEngine:
                 try:
                     sock_file = self.connect_to_ipc(ipc_path)
                     break
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             time.sleep(0.1)
 
@@ -79,7 +80,7 @@ class PlayerEngine:
                 if os.name == 'nt': sock_file.write(payload.encode('utf-8'))
                 else: sock_file.write(payload)
             if os.name != 'nt': sock_file.flush()
-        except Exception:  # noqa: BLE001
+        except Exception:
             return
 
         progress_bar = Progress(
@@ -132,12 +133,11 @@ class PlayerEngine:
                             duration=fmt_time(state['duration']),
                             cache_duration=f"{cache_val:.1f}" if cache_val is not None else "0.0" # RESTORED: precision float
                         )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     console.print(f"[dim red]IPC polling read error: {e}[/dim red]")
                     continue
-        try: sock_file.close()
-        except (OSError, AttributeError):
-            pass
+            with suppress(OSError, AttributeError):
+                sock_file.close()
         
     async def resolve_tokens_async(self, assets):
         """Parallel token refresh for streaming with NULL safety."""
@@ -181,7 +181,7 @@ class PlayerEngine:
                 for idx, title, url in playback_queue:
                     f.write(f"#EXTINF:-1,{idx}. {title}\n{url}\n")
                 p_path = f.name
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             console.print(f"[bold red][-][/bold red] Failed to generate temporary play-queue file: {e}")
             return
 
@@ -344,7 +344,7 @@ def main():
             })
     elif input_json_path:
         console.print(f"[*] Reading legacy fallback catalog from {input_json_path}...")
-        with open(input_json_path, "r", encoding="utf-8") as f:
+        with open(input_json_path, encoding="utf-8") as f:
             data = json.load(f)
         for item in data.get("files_found", []):
             files_list.append({
