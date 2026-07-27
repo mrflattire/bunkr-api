@@ -1,8 +1,9 @@
 import asyncio
 import sys
+from pathlib import Path
 
 import pytest
-import sqlite3
+
 from bunkr_api.core.db import DatabaseManager
 
 
@@ -20,7 +21,7 @@ def pytest_asyncio_loop_factories(config, item):
 
 
 @pytest.fixture
-def temp_db(tmp_path):
+def temp_db(tmp_path: Path):
     """Provides a clean, temporary database for every test."""
     db_file = tmp_path / "test_media.db"
     return DatabaseManager(str(db_file))

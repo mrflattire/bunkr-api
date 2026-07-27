@@ -80,7 +80,7 @@ class PlayerEngine:
                 if os.name == 'nt': sock_file.write(payload.encode('utf-8'))
                 else: sock_file.write(payload)
             if os.name != 'nt': sock_file.flush()
-        except Exception:
+        except Exception: 
             return
 
         progress_bar = Progress(
@@ -133,7 +133,7 @@ class PlayerEngine:
                             duration=fmt_time(state['duration']),
                             cache_duration=f"{cache_val:.1f}" if cache_val is not None else "0.0" # RESTORED: precision float
                         )
-                except Exception as e:
+                except Exception as e: 
                     console.print(f"[dim red]IPC polling read error: {e}[/dim red]")
                     continue
             with suppress(OSError, AttributeError):
@@ -181,7 +181,7 @@ class PlayerEngine:
                 for idx, title, url in playback_queue:
                     f.write(f"#EXTINF:-1,{idx}. {title}\n{url}\n")
                 p_path = f.name
-        except Exception as e:
+        except Exception as e: 
             console.print(f"[bold red][-][/bold red] Failed to generate temporary play-queue file: {e}")
             return
 
