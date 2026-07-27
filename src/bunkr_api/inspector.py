@@ -274,7 +274,7 @@ class Inspector:
             try:
                 table = "albums" if target == "album" else "assets"
                 total_rows = self._resolve_bound(conn, table)
-                ids = list(parse_selection(selection, total_rows))
+                ids = parse_selection(selection, total_items=total_rows)
 
                 placeholders = ",".join("?" for _ in ids)
 
@@ -305,7 +305,7 @@ class Inspector:
             else:
                 try:
                     total = self._resolve_bound(conn, "albums")
-                    ids = list(parse_selection(album_ids, total))
+                    ids = list(parse_selection(album_ids, total_items=total))
                     if not ids:
                         console.print("[yellow]No valid album ids in selection.[/yellow]")
                         return

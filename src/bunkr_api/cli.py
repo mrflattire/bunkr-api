@@ -136,7 +136,7 @@ def show_album_details(album_id):
         # Action 1: Stream
         if act == "1":
             sel = Prompt.ask("[bold cyan][?][/bold cyan] Stream selection (Enter for all)").strip() or "all"
-            indices = parse_selection(sel, total_items)
+            indices = parse_selection(sel, total_items=total_items)
             p_engine = Prompt.ask("[bold cyan][?][/bold cyan] Media Player Engine", choices=["mpv", "vlc"], default="mpv")
             
             selected_assets = [dict(assets[i-1]) for i in indices]
@@ -424,7 +424,7 @@ def main_loop():
             del_spec = Prompt.ask("[bold red][?][/bold red] Album number(s) to delete (e.g. 1, 2-4)")
             if not del_spec: continue
             try:
-                indices = parse_selection(del_spec, len(albums))
+                indices = parse_selection(del_spec, total_items=len(albums))
                 target_ids = [albums[idx-1]['id'] for idx in indices]
                 
                 if Prompt.ask(f"Permanently delete {len(target_ids)} album(s)?", choices=["y", "n"], default="n") == "y":

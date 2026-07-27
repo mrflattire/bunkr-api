@@ -21,7 +21,7 @@ def clean_dragged_path(raw: str) -> str:
 
 def slugify_filename(idx: int, title: str) -> str:
     """Standard slugifier for filenames."""
-    clean = re.sub(r'[\\/*?:"<>|]', "", title)
+    clean = re.sub(r'[^a-zA-Z0-9\s]', '', title)
     clean = re.sub(r'\s+', "_", clean).strip("_")
     return f"{idx:02d}_{clean if clean else 'output'}"
 
@@ -52,22 +52,35 @@ def parse_and_check_expiry(expiry: int | None) -> str:
         return f"[bold green]Valid ({hours}h {mins}m left) ✅[/bold green]"
     return f"[bold yellow]Valid ({mins}m left) ⚠️[/bold yellow]"
 
-def parse_selection(spec: str, total: int) -> set[int]:
+def parse_selection(spec: str, total_items: int) -> list[int]:
     """Restored: The advanced selection parser (1,3,5-10)."""
-    if not spec or spec.lower() == 'all': return set(range(1, total + 1))
+    if not spec or spec.strip().lower() == "all":
+        return list(range(1, total_items + 1))
+
     selected = set()
     for chunk in (c.strip() for c in spec.split(",") if c.strip()):
         if "-" in chunk:
             try:
                 start_str, end_str = chunk.split("-", 1)
                 start, end = int(start_str), int(end_str)
-                if start > end: start, end = end, start
+                if start > end:
+                    start, end = end, start
                 selected.update(range(start, end + 1))
-            except ValueError: continue
+            except ValueError as e:
+                raise ValueError(f"Invalid range format: '{chunk}'") from e
         else:
-            try: selected.add(int(chunk))
-            except ValueError: continue
-    return {i for i in selected if 1 <= i <= total}
+            try:
+                selected.add(int(chunk))
+            except ValueError as e:
+                raise ValueError(f"Invalid numeric index: '{chunk}'") from e
+
+    valid = [i for i in selected if 1 <= i <= total_items]
+    if not valid and spec.strip():
+        raise ValueError(
+            f"Selection '{spec}' out of range (1-{total_items})"
+        )
+
+    return sorted(valid)
 
 def sanitize_filename_simple(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c in "._- ()").strip()

@@ -381,7 +381,7 @@ def main():
     # Filter selection
     if selection_arg and selection_arg != 'all':
         try:
-            indices = parse_selection(selection_arg, len(files_list))
+            indices = parse_selection(selection_arg, total_items=len(files_list))
             files_list = [files_list[i-1] for i in indices]
         except (ValueError, TypeError, IndexError) as e:
             console.print(f"[red][!] Selection error: {e}[/red]")

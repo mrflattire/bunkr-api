@@ -360,7 +360,7 @@ def main():
         return
 
     try:
-        indices = parse_selection(selection_arg or 'all', len(files_list))
+        indices = parse_selection(selection_arg or 'all', total_items=len(files_list))
     except ValueError as e:
         console.print(f"[bold red][!] {e}[/bold red]")
         return
