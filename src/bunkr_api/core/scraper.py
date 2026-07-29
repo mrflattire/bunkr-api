@@ -174,7 +174,10 @@ class ScraperEngine:
         res = await execute_request_with_retry_async(session, optimized_url, headers=HEADERS)
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        album_title = soup.title.string.replace(" - Bunkr", "") if soup.title else "Unknown Album"
+        album_title = (
+            re.sub(r'\s*[\|\-]\s*Bunkr\s*$', '', soup.title.string, flags=re.IGNORECASE)
+            if soup.title else "Unknown Album"
+        )
         
         console.print(f"\n[bold green][+][/bold green] Selected: #[bold yellow]{album_number_index}[/bold yellow] - [bold white]{album_title}[/bold white]")
 

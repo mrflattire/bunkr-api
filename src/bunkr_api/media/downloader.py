@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from pathlib import Path
 
@@ -151,20 +151,28 @@ class DownloadEngine:
         async with AsyncSession(impersonate="chrome") as session:
             await asyncio.gather(*[worker(session, a) for a in needed])
 
-    def run(self, files_list, workers=1, output_dir=DEFAULT_OUTPUT_DIR):
-        """The main execution loop for the engine."""
+    async def run(self, files_list, workers=1, output_dir=DEFAULT_OUTPUT_DIR):
+        """
+        The main execution loop for the engine.
+
+        Async: awaits resolve_tokens_async() directly instead of wrapping it
+        in a nested asyncio.run() (which crashes with "asyncio.run() cannot
+        be called from a running event loop" whenever a caller — like the
+        developer-facing BunkrAPI.download_album() — is itself already
+        running inside an event loop). Worker tasks go through
+        loop.run_in_executor(), which returns real asyncio.Futures, so
+        awaiting asyncio.wait() on them yields control back to the event
+        loop between polls instead of blocking it the way
+        concurrent.futures.wait() did.
+        """
         self.shutdown_event.clear()
         
         if not shutil.which("yt-dlp"):
             console.print("[red][-][/red] Error: 'yt-dlp' was not found in your system PATH.")
             return
 
-        # 1. Async token prep
-        loop_f = asyncio.SelectorEventLoop if sys.platform == 'win32' else None
-        if loop_f:
-            asyncio.run(self.resolve_tokens_async(files_list), loop_factory=loop_f)
-        else:
-            asyncio.run(self.resolve_tokens_async(files_list))
+        # 1. Await token prep directly — no nested asyncio.run()
+        await self.resolve_tokens_async(files_list)
 
         # 2. Setup Progress
         progress = Progress(
@@ -172,43 +180,62 @@ class DownloadEngine:
             TaskProgressColumn(), DownloadColumn(), TransferSpeedColumn(),
             console=console, transient=True
         )
-        
+
         # 3. Execution Pool
+        loop = asyncio.get_running_loop()
         executor = ThreadPoolExecutor(max_workers=workers)
+        interrupted = False
         try:
             with progress:
                 slot_tasks = [progress.add_task(f"[Worker {i+1}] Idle", total=None) for i in range(workers)]
-                futures = []
                 slots = list(range(workers))
-                task_iterator = iter(files_list)
-                active_map = {} 
+                task_iterator = enumerate(files_list, start=1)
+                slot_for_future = {}
+                pending = set()
 
                 while True:
                     while slots:
                         try:
-                            asset = next(task_iterator)
+                            index, asset = next(task_iterator)
                             slot = slots.pop(0)
-                            f = executor.submit(
-                                self.execute_ytdlp_task, 0, len(files_list), 
+                            future = loop.run_in_executor(
+                                executor, self.execute_ytdlp_task, index, len(files_list),
                                 asset, slot, slot_tasks[slot], progress, output_dir
                             )
-                            futures.append(f)
-                            active_map[f] = slot
+                            slot_for_future[future] = slot
+                            pending.add(future)
                         except StopIteration:
                             break
 
-                    if not futures:
+                    if not pending:
                         break
 
-                    done, _ = wait(futures, timeout=1.0, return_when=FIRST_COMPLETED)
-                    
-                    for f in done:
-                        futures.remove(f)
-                        slot_freed = active_map.pop(f)
+                    done, pending = await asyncio.wait(
+                        pending, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
+                    )
+
+                    for future in done:
+                        slot_freed = slot_for_future.pop(future)
                         slots.append(slot_freed)
                         progress.update(slot_tasks[slot_freed], description=f"[Worker {slot_freed+1}] Idle", completed=0, total=None)
+                        exc = future.exception()
+                        if exc:
+                            console.print(f"[red][-][/red] Worker error: {exc}")
 
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # On modern Python (3.11+, and confirmed here on 3.14), Ctrl+C
+            # under asyncio.run() does NOT raise KeyboardInterrupt directly
+            # into the running coroutine — the Runner cancels the task
+            # instead, which surfaces here as CancelledError at whatever
+            # await point was active (in our case, inside asyncio.wait()).
+            # A raw KeyboardInterrupt is only injected directly into
+            # whatever's executing if the user presses Ctrl+C a second time
+            # after that — which used to land mid-way through this method's
+            # OWN finally-block shutdown call, corrupting it. Catching
+            # CancelledError here means a single Ctrl+C is now enough to
+            # trigger clean cleanup instead of needing a second, more
+            # destructive one.
+            interrupted = True
             self.shutdown_event.set()
             console.print("\n[bold yellow][!] Interrupt detected. Cleaning up...[/bold yellow]")
             with self.active_processes_lock:
@@ -216,9 +243,18 @@ class DownloadEngine:
                     with suppress(Exception):
                         proc.terminate()
             executor.shutdown(wait=False, cancel_futures=True)
-            time.sleep(1)
+            await asyncio.sleep(1)
         finally:
-            executor.shutdown(wait=True)
+            # Only do a full blocking join on the normal-completion path.
+            # On the interrupted path we've already requested a fast,
+            # non-blocking shutdown above (wait=False, cancel_futures=True)
+            # — redundantly joining here too would undo that and reopen
+            # the exact window where a second Ctrl+C used to land mid-join
+            # and corrupt shutdown. On normal completion `pending` is
+            # already empty by the time we get here, so this join is
+            # near-instant anyway.
+            if not interrupted:
+                executor.shutdown(wait=True)
 
 def prompt_for_inputs(db):
     """Restored: Interactive catalog browser from original download.py."""
@@ -388,7 +424,14 @@ def main():
             return
 
     out_dir = Path(args.output).expanduser() if args.output else DEFAULT_OUTPUT_DIR
-    engine.run(files_list, workers=workers, output_dir=out_dir)
+    try:
+        asyncio.run(engine.run(files_list, workers=workers, output_dir=out_dir))
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # Safety net for an interrupt landing before run()'s own try block
+        # starts (e.g. during the token pre-minting await) — that window
+        # isn't covered by run()'s internal handler, so without this the
+        # user would see a raw traceback instead of a clean exit.
+        console.print("\n[bold yellow][!] Interrupted before downloads started.[/bold yellow]")
 
 if __name__ == "__main__":
     main()

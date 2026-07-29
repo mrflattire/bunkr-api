@@ -53,7 +53,7 @@ class Inspector:
             console.print(f"[bold white]{len(rows)} row(s):[/bold white]")
             for row in rows:
                 console.print(f"[bold cyan]--- id={row['id']} ---[/bold cyan]")
-                for key, value in row.items():
+                for key, value in dict(row).items():
                     console.print(f"  [dim]{key}:[/dim] {value}", soft_wrap=True, highlight=False)
                 console.print()
 
@@ -146,13 +146,13 @@ class Inspector:
                 return
             
             console.print(f"[bold magenta]Album Detail: #{album['id']}[/bold magenta]")
-            for k, v in album.items():
+            for k, v in dict(album).items():
                 console.print(f"  [dim]{k}:[/dim] {v}", soft_wrap=True)
 
             assets = conn.execute("SELECT * FROM assets WHERE album_id=? ORDER BY track_number ASC", (album_id,)).fetchall()
             for r in assets:
                 console.print(f"\n[bold cyan]--- Asset ID: {r['id']} (Track {r['track_number']}) ---[/bold cyan]")
-                for k, v in r.items():
+                for k, v in dict(r).items():
                     console.print(f"  [dim]{k}:[/dim] {v}", soft_wrap=True, highlight=False)
 
     def display_expiring(self):
@@ -338,6 +338,49 @@ class Inspector:
                 conn.execute("VACUUM")
             console.print("[green]Database nuked. Schema will auto-rebuild on next use.[/green]")
 
+    def recount_file_counts(self):
+        """Repairs albums.file_count AND albums.aggregate_size by recomputing
+        both directly from the assets table, fixing drift like an album whose
+        scrape returned 0 parsed files (e.g. extract_advanced_album_files()
+        failing to match a page's layout) while a stale size string from the
+        separate header-text parse stuck around, or any album whose assets
+        were added/removed without these columns being resynced.
+
+        aggregate_size is stored as a formatted string ("8.84 GB"), so unlike
+        file_count this can't be a single SQL UPDATE — it's summed per-album
+        via SQL, then formatted in Python with the same format_bytes() used
+        everywhere else, and written back row by row.
+        """
+        with closing(self.get_conn()) as conn:
+            try:
+                conn.execute("""
+                    UPDATE albums
+                    SET file_count = (
+                        SELECT COUNT(*) FROM assets WHERE assets.album_id = albums.id
+                    )
+                """)
+
+                totals = conn.execute("""
+                    SELECT albums.id AS album_id,
+                           COALESCE(SUM(assets.raw_size_bytes), 0) AS total_bytes
+                    FROM albums
+                    LEFT JOIN assets ON assets.album_id = albums.id
+                    GROUP BY albums.id
+                """).fetchall()
+
+                for row in totals:
+                    conn.execute(
+                        "UPDATE albums SET aggregate_size = ? WHERE id = ?",
+                        (format_bytes(row["total_bytes"]), row["album_id"]),
+                    )
+
+                conn.commit()
+                console.print(
+                    f"[green]Recounted file_count and aggregate_size for {len(totals)} album(s).[/green]"
+                )
+            except sqlite3.Error as e:
+                console.print(f"[red]Recount failed: {e}[/red]")
+
 
 ## CLI ENTRY POINT
 
@@ -417,13 +460,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  bunkr-inspect --wipe                  delete ALL albums+assets, keep config, prompts first\n"
-            "  bunkr-inspect --wipe 12,13            delete only albums 12 and 13 (and their assets)\n"
-            "  bunkr-inspect --wipe 7-9 -y           same, but skip the confirmation prompt\n"
-            "  bunkr-inspect --nuke                  factory reset: drops every table, including config\n"
-            "  bunkr-inspect --exec \"DELETE FROM assets WHERE download_status='FAILED';\"\n"
-            "  bunkr-inspect --add-column assets:true_file_id:INTEGER\n"
-            "  bunkr-inspect --drop-column assets:true_file_id -y\n"
+            "  bunkr-inspect db --wipe                  delete ALL albums+assets, keep config, prompts first\n"
+            "  bunkr-inspect db --wipe 12,13            delete only albums 12 and 13 (and their assets)\n"
+            "  bunkr-inspect db --wipe 7-9 -y           same, but skip the confirmation prompt\n"
+            "  bunkr-inspect db --nuke                  factory reset: drops every table, including config\n"
+            "  bunkr-inspect db --exec \"DELETE FROM assets WHERE download_status='FAILED';\"\n"
+            "  bunkr-inspect db --add-column assets:true_file_id:INTEGER\n"
+            "  bunkr-inspect db --drop-column assets:true_file_id -y\n"
+            "  bunkr-inspect db --recount               repair albums.file_count + aggregate_size from actual assets\n"
         ),
     )
     db_cmd.add_argument("--wipe", nargs="?", const="all", default=None,
@@ -432,6 +476,7 @@ def main():
     db_cmd.add_argument("--exec", metavar="SQL", help="Run an arbitrary write SQL statement, e.g. an UPDATE or DELETE")
     db_cmd.add_argument("--add-column", metavar="TABLE:COLUMN:TYPE", help="e.g. assets:true_file_id:INTEGER")
     db_cmd.add_argument("--drop-column", metavar="TABLE:COLUMN", help="e.g. assets:true_file_id")
+    db_cmd.add_argument("--recount", action="store_true", help="Repair albums.file_count and aggregate_size by recomputing both from actual assets")
     db_cmd.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts (for --wipe/--nuke/--drop-column)")
 
     args = parser.parse_args()
@@ -457,6 +502,7 @@ def main():
         elif args.wipe is not None: insp.wipe(args.wipe, args.yes)
         elif args.add_column: insp.add_column(args.add_column)
         elif args.drop_column: insp.drop_column(args.drop_column, args.yes)
+        elif args.recount: insp.recount_file_counts()
         elif args.exec:
             with closing(insp.get_conn()) as conn:
                 res = conn.execute(args.exec)

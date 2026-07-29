@@ -1,4 +1,3 @@
-import asyncio
 import urllib.parse
 from pathlib import Path
 
@@ -9,7 +8,7 @@ from .config import DB_PATH, DEFAULT_OUTPUT_DIR, SEARCH_MODES, SORT_TYPES
 # Internal Package Imports
 from .core.db import DatabaseManager
 from .core.scraper import ScraperEngine
-from .core.tokens import daemon_loop
+from .core.tokens import refresh_all_tokens_async
 from .media.downloader import DownloadEngine
 from .media.player import PlayerEngine
 
@@ -72,7 +71,7 @@ class BunkrAPI:
     # MEDIA EXECUTION
     # ============================================================
 
-    def download_album(self, album_id: int, workers: int = 3, output_dir: Path = DEFAULT_OUTPUT_DIR):
+    async def download_album(self, album_id: int, workers: int = 3, output_dir: Path = DEFAULT_OUTPUT_DIR):
         """
         Trigger a multi-threaded download for an album.
         """
@@ -93,10 +92,10 @@ class BunkrAPI:
             d['album_id'] = album_id
             dl_list.append(d)
 
-        # 3. Execute
-        self.downloader.run(dl_list, workers=workers, output_dir=output_dir)
+        # 3. Await the downloader run
+        await self.downloader.run(dl_list, workers=workers, output_dir=output_dir)
 
-    def stream_album(self, album_id: int, indices_spec: str = "all", player: str = "mpv"):
+    async def stream_album(self, album_id: int, indices_spec: str = "all", player: str = "mpv"):
         """
         Resolves tokens and launches the media player.
         """
@@ -107,35 +106,36 @@ class BunkrAPI:
         from .utils.formatting import parse_selection
         indices = parse_selection(indices_spec, total_items=len(assets))
 
-        # Resolve tokens in an ad-hoc loop
+        # 1. Standardize selected assets
         selected_assets = [dict(assets[i-1]) for i in indices]
 
-        asyncio.run(self.player.resolve_tokens_async(selected_assets))
+        # 2. Await the token refresh
+        await self.player.resolve_tokens_async(selected_assets)
 
-        # Build final queue
+        # 3. Build final queue
         queue = []
         for i in indices:
             a = dict(assets[i-1])
             url = self.db.get_valid_url(a['id'])
             queue.append((i, a['title'], url))
 
+        # 4. Launch player
         if player == "vlc":
-            self.player.play_vlc(queue)
+            await self.player.play_vlc(queue)
         else:
-            self.player.play_mpv(queue)
+            await self.player.play_mpv(queue)
 
     # ============================================================
     # MAINTENANCE
     # ============================================================
 
-    def refresh_tokens(self, album_id: int | None = None):
+    async def refresh_tokens(self, album_id: int | None = None):
         """
-        Refresh signed CDN tokens.
-
-        :param album_id: If provided, does a single targeted pass over just
-            this album's assets and returns. If omitted, launches the
-            background daemon, which polls the entire database on a fixed
-            interval and BLOCKS THE CALLING THREAD INDEFINITELY until
-            interrupted (Ctrl+C) or it hits an unhandled error.
+        Refresh signed CDN tokens asynchronously.
         """
-        daemon_loop(album_id=album_id)
+        raw_assets = self.db.get_needs_refresh(album_id=album_id)
+        expiring_assets = [dict(row) for row in raw_assets]
+        
+        if expiring_assets:
+            max_workers = int(self.db.get_config_val("max_workers", "4"))
+            await refresh_all_tokens_async(self.db, expiring_assets, max_workers)
