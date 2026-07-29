@@ -12,6 +12,12 @@ def api(tmp_path):
     The real __init__ still runs (so we exercise the actual wiring), but we
     immediately swap db/scraper/downloader/player for mocks so tests only
     cover the facade logic in api.py, not the engines themselves.
+
+    NOTE: downloader/player methods that are now `await`ed in api.py
+    (downloader.run, player.play_mpv, player.play_vlc, player.resolve_tokens_async)
+    are plain MagicMock attributes by default and are NOT awaitable — each
+    test that awaits them explicitly reassigns them to AsyncMock, matching
+    the style already used for player.resolve_tokens_async.
     """
     instance = BunkrAPI(db_path=str(tmp_path / "test.db"))
     instance.db = MagicMock()
@@ -69,11 +75,7 @@ async def test_search_no_term(api):
 
 @pytest.mark.asyncio
 async def test_search_with_term(api):
-    """A non-empty term goes through urllib.parse.urlencode to build the query string.
-
-    NOTE: this currently fails with NameError: name 'urllib' is not defined,
-    because api.py uses urllib.parse.urlencode without importing urllib.
-    """
+    """A non-empty term goes through urllib.parse.urlencode to build the query string."""
     mock_response = MagicMock()
     mock_response.text = "<html></html>"
 
@@ -120,20 +122,22 @@ async def test_resolve_album(api):
 
 
 # ============================================================
-# DOWNLOAD
+# DOWNLOAD (download_album is now async)
 # ============================================================
 
-def test_download_album_not_found(api):
+@pytest.mark.asyncio
+async def test_download_album_not_found(api):
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = None
     api.db.connection.return_value.__enter__.return_value = mock_conn
     api.db.connection.return_value.__exit__.return_value = False
 
     with pytest.raises(ValueError):
-        api.download_album(album_id=999)
+        await api.download_album(album_id=999)
 
 
-def test_download_album_success(api, tmp_path):
+@pytest.mark.asyncio
+async def test_download_album_success(api, tmp_path):
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = {"title": "My Album"}
     api.db.connection.return_value.__enter__.return_value = mock_conn
@@ -143,10 +147,11 @@ def test_download_album_success(api, tmp_path):
         {"id": 10, "title": "vid1.mp4"},
         {"id": 11, "title": "vid2.mp4"},
     ]
+    api.downloader.run = AsyncMock()
 
-    api.download_album(album_id=1, workers=5, output_dir=tmp_path)
+    await api.download_album(album_id=1, workers=5, output_dir=tmp_path)
 
-    api.downloader.run.assert_called_once()
+    api.downloader.run.assert_awaited_once()
     dl_list, kwargs = api.downloader.run.call_args[0][0], api.downloader.run.call_args[1]
 
     assert dl_list[0]["db_asset_id"] == 10
@@ -157,22 +162,25 @@ def test_download_album_success(api, tmp_path):
 
 
 # ============================================================
-# STREAMING
+# STREAMING (stream_album is now async)
 # ============================================================
 
-def test_stream_album_no_assets(api):
+@pytest.mark.asyncio
+async def test_stream_album_no_assets(api):
     api.db.get_album_assets.return_value = []
 
     with pytest.raises(ValueError):
-        api.stream_album(album_id=99)
+        await api.stream_album(album_id=99)
 
 
-def test_stream_album_success(api):
+@pytest.mark.asyncio
+async def test_stream_album_success(api):
     api.db.get_album_assets.return_value = [
         {"id": 1, "title": "a.mp4"},
         {"id": 2, "title": "b.mp4"},
     ]
     api.player.resolve_tokens_async = AsyncMock()
+    api.player.play_mpv = AsyncMock()
     api.db.get_valid_url.side_effect = ["http://a", "http://b"]
 
     # parse_selection is imported locally inside stream_album (from
@@ -182,48 +190,75 @@ def test_stream_album_success(api):
     with patch(
         "bunkr_api.utils.formatting.parse_selection", return_value=[1, 2]
     ):
-        api.stream_album(album_id=1, indices_spec="all", player="mpv")
+        await api.stream_album(album_id=1, indices_spec="all", player="mpv")
 
     api.player.resolve_tokens_async.assert_awaited_once()
-    api.player.play_mpv.assert_called_once()
+    api.player.play_mpv.assert_awaited_once()
     queue_arg = api.player.play_mpv.call_args[0][0]
     assert queue_arg == [(1, "a.mp4", "http://a"), (2, "b.mp4", "http://b")]
 
 
-def test_stream_album_uses_vlc_when_requested(api):
+@pytest.mark.asyncio
+async def test_stream_album_uses_vlc_when_requested(api):
     api.db.get_album_assets.return_value = [{"id": 1, "title": "a.mp4"}]
     api.player.resolve_tokens_async = AsyncMock()
+    api.player.play_vlc = AsyncMock()
+    api.player.play_mpv = AsyncMock()
     api.db.get_valid_url.return_value = "http://a"
 
     with patch(
         "bunkr_api.utils.formatting.parse_selection", return_value=[1]
     ):
-        api.stream_album(album_id=1, indices_spec="1", player="vlc")
+        await api.stream_album(album_id=1, indices_spec="1", player="vlc")
 
-    api.player.play_vlc.assert_called_once()
-    api.player.play_mpv.assert_not_called()
+    api.player.play_vlc.assert_awaited_once()
+    api.player.play_mpv.assert_not_awaited()
 
 
 # ============================================================
-# MAINTENANCE
+# MAINTENANCE (refresh_tokens no longer uses daemon_loop at all —
+# it now calls refresh_all_tokens_async directly, same as the CLI's
+# "mint now" action after the async refactor)
 # ============================================================
 
-def test_refresh_tokens_targeted(api):
-    """With an album_id, refresh_tokens delegates to daemon_loop's one-shot path."""
-    with patch("bunkr_api.api.daemon_loop") as mock_daemon:
-        api.refresh_tokens(album_id=5)
+@pytest.mark.asyncio
+async def test_refresh_tokens_targeted_refreshes_pending_assets(api):
+    api.db.get_needs_refresh.return_value = [{"id": 1, "true_file_id": "abc"}]
+    api.db.get_config_val.return_value = "4"
 
-    mock_daemon.assert_called_once_with(album_id=5)
+    with patch(
+        "bunkr_api.api.refresh_all_tokens_async", new_callable=AsyncMock
+    ) as mock_refresh:
+        await api.refresh_tokens(album_id=5)
+
+    api.db.get_needs_refresh.assert_called_once_with(album_id=5)
+    mock_refresh.assert_awaited_once_with(api.db, [{"id": 1, "true_file_id": "abc"}], 4)
 
 
-def test_refresh_tokens_no_id_launches_daemon(api):
-    """With no album_id, refresh_tokens hands off to daemon_loop's polling
-    mode. daemon_loop itself is mocked here since its unbounded `while True`
-    loop is exercised separately in core/tokens tests, not here — this test
-    only pins down that the facade passes album_id=None through unchanged
-    rather than silently defaulting to some other one-shot behavior.
+@pytest.mark.asyncio
+async def test_refresh_tokens_skips_call_when_nothing_needs_refresh(api):
+    api.db.get_needs_refresh.return_value = []
+
+    with patch(
+        "bunkr_api.api.refresh_all_tokens_async", new_callable=AsyncMock
+    ) as mock_refresh:
+        await api.refresh_tokens(album_id=5)
+
+    mock_refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refresh_tokens_no_album_id_passes_none_through(api):
+    """With no album_id, refresh_tokens now does a genuine one-shot pass over
+    the WHOLE database's due assets and returns — no more infinite daemon.
     """
-    with patch("bunkr_api.api.daemon_loop") as mock_daemon:
-        api.refresh_tokens()
+    api.db.get_needs_refresh.return_value = [{"id": 2, "true_file_id": "xyz"}]
+    api.db.get_config_val.return_value = "8"
 
-    mock_daemon.assert_called_once_with(album_id=None)
+    with patch(
+        "bunkr_api.api.refresh_all_tokens_async", new_callable=AsyncMock
+    ) as mock_refresh:
+        await api.refresh_tokens()
+
+    api.db.get_needs_refresh.assert_called_once_with(album_id=None)
+    mock_refresh.assert_awaited_once_with(api.db, [{"id": 2, "true_file_id": "xyz"}], 8)
