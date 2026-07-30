@@ -188,7 +188,10 @@ def daemon_loop(album_id: int | None = None):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Token Refresh Utility")
-    parser.add_argument('--album-id', type=int, help="Target a specific album")
+    parser = argparse.ArgumentParser(
+        prog="bunkr-mint",
+        description="Token Refresh Utility. Run 'bunkr-mint' with no options to launch the background daemon."
+    )
+    parser.add_argument('-a', '--album-id', type=int, help="Target a specific album ID for a one-shot refresh")
     args = parser.parse_args()
     daemon_loop(album_id=args.album_id)

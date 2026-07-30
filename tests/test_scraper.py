@@ -291,7 +291,7 @@ def _sample_album_html(title_suffix=" - Bunkr"):
 async def test_scrape_album_builds_optimized_url_and_registers(temp_db):
     engine = ScraperEngine(temp_db)
     temp_db.register_album_from_json = MagicMock(return_value=(99, 1, 0))
-    mock_session = AsyncMock()
+    mock_session = MagicMock()  # passed through opaque; never called/awaited
     mock_response = MagicMock()
     mock_response.text = _sample_album_html()
 
@@ -323,7 +323,7 @@ async def test_scrape_album_strips_pipe_separated_bunkr_suffix(temp_db):
     """Title stripping now handles both ' - Bunkr' and ' | Bunkr' suffixes."""
     engine = ScraperEngine(temp_db)
     temp_db.register_album_from_json = MagicMock(return_value=(1, 1, 0))
-    mock_session = AsyncMock()
+    mock_session = MagicMock()  # passed through opaque; never called/awaited
     mock_response = MagicMock()
     mock_response.text = _sample_album_html(title_suffix=" | Bunkr")
 
@@ -341,7 +341,7 @@ async def test_scrape_album_strips_pipe_separated_bunkr_suffix(temp_db):
 async def test_scrape_album_no_slug_in_url_sets_album_slug_none(temp_db):
     engine = ScraperEngine(temp_db)
     temp_db.register_album_from_json = MagicMock(return_value=(1, 1, 0))
-    mock_session = AsyncMock()
+    mock_session = MagicMock()  # passed through opaque; never called/awaited
     mock_response = MagicMock()
     mock_response.text = _sample_album_html()
 
@@ -359,7 +359,7 @@ async def test_scrape_album_no_slug_in_url_sets_album_slug_none(temp_db):
 async def test_scrape_album_save_json_writes_file(temp_db, tmp_path):
     engine = ScraperEngine(temp_db)
     temp_db.register_album_from_json = MagicMock(return_value=(5, 1, 0))
-    mock_session = AsyncMock()
+    mock_session = MagicMock()  # passed through opaque; never called/awaited
     mock_response = MagicMock()
     mock_response.text = _sample_album_html()
 
@@ -383,7 +383,7 @@ async def test_scrape_album_save_json_writes_file(temp_db, tmp_path):
 async def test_scrape_album_save_json_failure_does_not_raise(temp_db, tmp_path):
     engine = ScraperEngine(temp_db)
     temp_db.register_album_from_json = MagicMock(return_value=(5, 1, 0))
-    mock_session = AsyncMock()
+    mock_session = MagicMock()  # passed through opaque; never called/awaited
     mock_response = MagicMock()
     mock_response.text = _sample_album_html()
 
@@ -406,7 +406,7 @@ async def test_scrape_album_save_json_failure_does_not_raise(temp_db, tmp_path):
 async def test_scrape_album_defaults_when_header_metadata_missing(temp_db):
     engine = ScraperEngine(temp_db)
     temp_db.register_album_from_json = MagicMock(return_value=(1, 0, 0))
-    mock_session = AsyncMock()
+    mock_session = MagicMock()  # passed through opaque; never called/awaited
     mock_response = MagicMock()
     mock_response.text = "<html><head><title>No Meta - Bunkr</title></head><body></body></html>"
 
@@ -429,7 +429,7 @@ async def test_scrape_album_prints_differentiated_feedback_for_new_vs_updated(te
     each branch actually fires rather than always printing the same message.
     """
     engine = ScraperEngine(temp_db)
-    mock_session = AsyncMock()
+    mock_session = MagicMock()  # passed through opaque; never called/awaited
     mock_response = MagicMock()
     mock_response.text = _sample_album_html()
 

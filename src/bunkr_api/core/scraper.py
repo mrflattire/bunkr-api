@@ -268,7 +268,10 @@ class ScraperEngine:
 
 def main():
     """Standalone CLI entry point for bunkr-scrape command."""
-    parser = argparse.ArgumentParser(description="Bunkr Standalone Scraper CLI")
+    parser = argparse.ArgumentParser(
+        prog="bunkr-scrape",
+        description="Bunkr Standalone Scraper CLI"
+    )
     parser.add_argument("search", nargs="?", default=None, help="The search query")
     parser.add_argument("-m", "--mode", choices=list(SEARCH_MODES.keys()), help="Search mode")
     parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="No. of results per page")
@@ -304,6 +307,3 @@ def main():
         asyncio.run(_run())
     except KeyboardInterrupt:
         sys.exit(0)
-
-if __name__ == "__main__":
-    main()

@@ -325,7 +325,10 @@ def main():
 
     from ..core.db import DatabaseManager
 
-    parser = argparse.ArgumentParser(description="Bunkr Standalone Downloader CLI")
+    parser = argparse.ArgumentParser(
+        prog="bunkr-download",
+        description="Bunkr Standalone Downloader CLI"
+    )
     parser.add_argument('-i', '--input', type=str, help="Legacy JSON path")
     parser.add_argument('--db-id', type=int, help="Database ID for album to download")
     parser.add_argument('-w', '--workers', type=int, help="Worker concurrency")

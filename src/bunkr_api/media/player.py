@@ -456,11 +456,14 @@ def main():
     """Standalone CLI entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Bunkr Standalone Streamer CLI")
-    parser.add_argument("--db-id", type=int)
-    parser.add_argument("-n", "--number", type=str)
-    parser.add_argument("--player", choices=["mpv", "vlc"])
-    parser.add_argument("--staged", action="store_true")
+    parser = argparse.ArgumentParser(
+        prog="bunkr-stream",
+        description="Bunkr Standalone Streamer CLI"
+    )
+    parser.add_argument("--db-id", type=int, help="Database ID for album to stream")
+    parser.add_argument("-n", "--number", type=str, help="Item/file selection")
+    parser.add_argument("--player", choices=["mpv", "vlc"], help="Select media player engine")
+    parser.add_argument("--staged", action="store_true", help="Stream staged items")
     args = parser.parse_args()
 
     loop_f = asyncio.SelectorEventLoop if sys.platform == "win32" else None

@@ -392,7 +392,7 @@ class Inspector:
 
 def main():
     insp = Inspector()
-    parser = argparse.ArgumentParser(description="Bunkr DB Management Toolkit")
+    parser = argparse.ArgumentParser(prog="bunkr-inspect", description="Bunkr DB Management Toolkit")
     subparsers = parser.add_subparsers(dest="command", metavar="{view,stage,db}")
 
     # VIEW COMMAND
