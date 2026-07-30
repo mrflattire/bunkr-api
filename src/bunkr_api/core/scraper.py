@@ -106,6 +106,24 @@ class ScraperEngine:
         seen = set()
         return [x for x in items if not (x['url'] in seen or seen.add(x['url']))]
 
+    def extract_page_metadata(self, soup):
+        """Parses total global pages from the HTML pagination section of a search results page."""
+        footer_div = soup.find('div', class_='text-xs text-[var(--text-soft)] mono')
+        if footer_div:
+            text = footer_div.get_text(strip=True)
+            match = re.search(r'Page\s+\d+\s+of\s+(\d+)', text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+
+        top_span = soup.find('span', class_='text-[var(--text)]')
+        if top_span:
+            parent_text = top_span.parent.get_text(strip=True) if top_span.parent else ""
+            match = re.search(r'page\s+\d+\s+of\s+(\d+)', parent_text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+
+        return "Unknown"
+
     def parse_album_header_metadata(self, soup):
         """Extract full album size and total files from the visitors paragraph."""
         album_size = None
@@ -195,11 +213,19 @@ class ScraperEngine:
             size_str = f" ({size_mb} MB)" if raw_size else ""
             console.print(f"  {i}. {f_rec['title']}{size_str} [[italic green]True[/italic green] ID: {f_rec['true_file_id']}]")
 
+        # Stable identity for this album, independent of its position in any
+        # given search results page (which shifts between scrapes and previously
+        # caused re-scrapes to register as phantom duplicate albums).
+        slug_match = re.search(r'/a/([\w-]+)', url)
+        album_slug = slug_match.group(1) if slug_match else None
+
         data = {
             'search_term': search_term or "N/A",
             'selected_album': {
                 'title': album_title.strip(),
                 'album_index_number': album_number_index,
+                'album_slug': album_slug,
+                'album_url': url,
                 'aggregate_size': album_size if album_size else "0 MB",
                 'clean_file_count': total_files if total_files else f"{len(final_files)} files"
             },
@@ -220,9 +246,24 @@ class ScraperEngine:
                 console.print(f"[red][!] JSON Backup Failed: {e}[/red]")
 
         console.print("[bold yellow][*][/bold yellow] Syncing records with Database Manager...")
-        album_id = self.db.register_album_from_json(data)
-        console.print(f"[bold green][+][/bold green] Database synchronization complete! Registered Album ID: [bold yellow]#{album_id}[/bold yellow]")
-        
+        album_id, new_count, updated_count = self.db.register_album_from_json(data)
+
+        if new_count and updated_count:
+            console.print(
+                f"[bold green][+][/bold green] Synced Album ID [bold yellow]#{album_id}[/bold yellow] — "
+                f"[bold cyan]{new_count}[/bold cyan] new file(s), [bold cyan]{updated_count}[/bold cyan] refreshed."
+            )
+        elif new_count:
+            console.print(
+                f"[bold green][+][/bold green] Registered Album ID [bold yellow]#{album_id}[/bold yellow] with "
+                f"[bold cyan]{new_count}[/bold cyan] file(s)."
+            )
+        else:
+            console.print(
+                f"[bold green][+][/bold green] Album ID [bold yellow]#{album_id}[/bold yellow] already up to date "
+                f"— [bold cyan]{updated_count}[/bold cyan] file(s) refreshed, no new files found."
+            )
+
         return album_id
 
 def main():
