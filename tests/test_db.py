@@ -332,3 +332,84 @@ def test_get_valid_url_remints_when_missing(temp_db):
 
 def test_get_valid_url_returns_empty_string_for_unknown_asset(temp_db):
     assert temp_db.get_valid_url(99999) == ""
+
+
+# ============================================================
+# get_album / delete_album
+# ============================================================
+
+def test_get_album_returns_row_when_found(temp_db):
+    album_id = _seed_album_helper(temp_db)
+    album = temp_db.get_album(album_id)
+    assert album is not None
+    assert album["id"] == album_id
+
+
+def test_get_album_returns_none_when_missing(temp_db):
+    assert temp_db.get_album(99999) is None
+
+
+def test_delete_album_removes_album_and_cascades_to_assets(temp_db):
+    data = _album_payload(
+        "Delete Me", slug="delete-me",
+        files=[{"href": "https://link.com/f/1", "title": "f1.mp4"}],
+    )
+    album_id, _, _ = temp_db.register_album_from_json(data)
+
+    deleted = temp_db.delete_album(album_id)
+
+    assert deleted is True
+    assert temp_db.get_album(album_id) is None
+    assert temp_db.get_album_assets(album_id) == []
+
+
+def test_delete_album_returns_false_when_nothing_to_delete(temp_db):
+    assert temp_db.delete_album(99999) is False
+
+
+# ============================================================
+# get_staged_assets / get_failed_assets
+# ============================================================
+
+def test_get_staged_assets_includes_directly_and_album_staged(temp_db):
+    direct_id = _seed_album_helper(temp_db, title="Direct Stage", slug="direct-stage",
+                                    files=[{"href": "https://link.com/f/direct", "title": "d.mp4"}])
+    album_staged_id = _seed_album_helper(temp_db, title="Album Stage", slug="album-stage",
+                                          files=[{"href": "https://link.com/f/album", "title": "a.mp4"}])
+    unstaged_id = _seed_album_helper(temp_db, title="Untouched", slug="untouched",  # noqa: F841
+                                      files=[{"href": "https://link.com/f/none", "title": "n.mp4"}])
+
+    direct_asset = temp_db.get_album_assets(direct_id)[0]
+    with temp_db.connection() as conn:
+        conn.execute("UPDATE assets SET is_staged=1 WHERE id=?", (direct_asset["id"],))
+        conn.execute("UPDATE albums SET is_staged=1 WHERE id=?", (album_staged_id,))
+
+    staged = temp_db.get_staged_assets()
+    titles = {row["title"] for row in staged}
+
+    assert "d.mp4" in titles
+    assert "a.mp4" in titles
+    assert "n.mp4" not in titles
+    # confirms the JOIN actually attaches album_title
+    assert all(row["album_title"] for row in staged)
+
+
+def test_get_failed_assets_only_returns_failed_status(temp_db):
+    album_id = _seed_album_helper(temp_db, files=[
+        {"href": "https://link.com/f/ok", "title": "ok.mp4"},
+        {"href": "https://link.com/f/bad", "title": "bad.mp4"},
+    ])
+    assets = temp_db.get_album_assets(album_id)
+    temp_db.update_download_status(assets[0]["id"], "COMPLETED", "/tmp/ok.mp4")  # noqa: S108
+    temp_db.update_download_status(assets[1]["id"], "FAILED", error="404")
+
+    failed = temp_db.get_failed_assets()
+    titles = {row["title"] for row in failed}
+
+    assert titles == {"bad.mp4"}
+
+
+def _seed_album_helper(db, title="Helper Album", slug="helper-album", files=None):
+    data = _album_payload(title, slug=slug, files=files or [])
+    album_id, _, _ = db.register_album_from_json(data)
+    return album_id

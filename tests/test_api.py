@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bunkr_api.api import BunkrAPI
+from bunkr_api.config import DEFAULT_OUTPUT_DIR
 
 
 @pytest.fixture
@@ -46,6 +47,29 @@ def test_get_assets(api):
 
     assert result == [{"id": 5, "title": "asset.mp4"}]
     api.db.get_album_assets.assert_called_once_with(1)
+
+
+def test_get_album_found(api):
+    api.db.get_album.return_value = {"id": 1, "title": "Test Album"}
+
+    result = api.get_album(1)
+
+    assert result == {"id": 1, "title": "Test Album"}
+
+
+def test_get_album_not_found_returns_none(api):
+    api.db.get_album.return_value = None
+
+    assert api.get_album(999) is None
+
+
+def test_get_valid_url_passes_through_to_db(api):
+    api.db.get_valid_url.return_value = "https://cdn.example.com/fresh"
+
+    result = api.get_valid_url(42)
+
+    assert result == "https://cdn.example.com/fresh"
+    api.db.get_valid_url.assert_called_once_with(42)
 
 
 # ============================================================
@@ -121,6 +145,29 @@ async def test_resolve_album(api):
     )
 
 
+@pytest.mark.asyncio
+async def test_resolve_and_download_chains_resolve_then_download(api):
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    api.scraper.scrape_album = AsyncMock(return_value=7)
+
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = {"title": "Chained Album"}
+    api.db.connection.return_value.__enter__.return_value = mock_conn
+    api.db.connection.return_value.__exit__.return_value = False
+    api.db.get_album_assets.return_value = []
+    api.downloader.run = AsyncMock()
+
+    with patch("bunkr_api.api.AsyncSession", return_value=mock_session):
+        result = await api.resolve_and_download("https://bunkr.si/a/xyz", workers=2)
+
+    assert result == 7
+    api.scraper.scrape_album.assert_awaited_once()
+    api.downloader.run.assert_awaited_once()
+    assert api.downloader.run.call_args[1]["workers"] == 2
+
+
 # ============================================================
 # DOWNLOAD (download_album is now async)
 # ============================================================
@@ -159,6 +206,46 @@ async def test_download_album_success(api, tmp_path):
     assert dl_list[0]["album_id"] == 1
     assert kwargs["workers"] == 5
     assert kwargs["output_dir"] == tmp_path
+
+
+@pytest.mark.asyncio
+async def test_download_staged_uses_get_staged_assets(api, tmp_path):
+    api.db.get_staged_assets.return_value = [
+        {"id": 20, "title": "staged.mp4", "album_title": "Some Album"},
+    ]
+    api.downloader.run = AsyncMock()
+
+    await api.download_staged(workers=2, output_dir=tmp_path)
+
+    api.db.get_staged_assets.assert_called_once()
+    dl_list = api.downloader.run.call_args[0][0]
+    assert dl_list[0]["db_asset_id"] == 20
+    assert dl_list[0]["album_title"] == "Some Album"
+
+
+@pytest.mark.asyncio
+async def test_download_staged_no_op_when_nothing_staged(api, tmp_path):
+    api.db.get_staged_assets.return_value = []
+    api.downloader.run = AsyncMock()
+
+    await api.download_staged()
+
+    api.downloader.run.assert_awaited_once_with([], workers=3, output_dir=DEFAULT_OUTPUT_DIR)
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_uses_get_failed_assets(api, tmp_path):
+    api.db.get_failed_assets.return_value = [
+        {"id": 30, "title": "failed.mp4", "album_title": "Some Album"},
+    ]
+    api.downloader.run = AsyncMock()
+
+    await api.retry_failed(workers=4, output_dir=tmp_path)
+
+    api.db.get_failed_assets.assert_called_once()
+    dl_list, kwargs = api.downloader.run.call_args[0][0], api.downloader.run.call_args[1]
+    assert dl_list[0]["db_asset_id"] == 30
+    assert kwargs["workers"] == 4
 
 
 # ============================================================
@@ -262,3 +349,18 @@ async def test_refresh_tokens_no_album_id_passes_none_through(api):
 
     api.db.get_needs_refresh.assert_called_once_with(album_id=None)
     mock_refresh.assert_awaited_once_with(api.db, [{"id": 2, "true_file_id": "xyz"}], 8)
+
+
+def test_delete_album_returns_db_result(api):
+    api.db.delete_album.return_value = True
+
+    result = api.delete_album(5)
+
+    assert result is True
+    api.db.delete_album.assert_called_once_with(5)
+
+
+def test_delete_album_false_when_nothing_deleted(api):
+    api.db.delete_album.return_value = False
+
+    assert api.delete_album(999) is False
