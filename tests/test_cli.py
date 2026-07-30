@@ -42,37 +42,18 @@ def mock_db():
 @pytest.fixture
 def fake_album():
     return {
-        "id": 1,
-        "title": "Test Album",
-        "search_term": "query",
-        "global_index": 5,
-        "aggregate_size": "1.82 GB",
-        "file_count": 2,
-        "is_staged": 0,
+        "id": 1, "title": "Test Album", "search_term": "query", "global_index": 5,
+        "aggregate_size": "1.82 GB", "file_count": 2, "is_staged": 0,
     }
 
 
 @pytest.fixture
 def fake_assets():
     return [
-        {
-            "id": 10,
-            "title": "a.mp4",
-            "raw_size_bytes": 1000,
-            "token_expiry_timestamp": None,
-            "signed_cdn_url": "http://a",
-            "source_url": "http://src/a",
-            "is_staged": 0,
-        },
-        {
-            "id": 11,
-            "title": "b.mp4",
-            "raw_size_bytes": 2000,
-            "token_expiry_timestamp": None,
-            "signed_cdn_url": "http://b",
-            "source_url": "http://src/b",
-            "is_staged": 0,
-        },
+        {"id": 10, "title": "a.mp4", "raw_size_bytes": 1000, "token_expiry_timestamp": None,
+         "signed_cdn_url": "http://a", "source_url": "http://src/a", "is_staged": 0},
+        {"id": 11, "title": "b.mp4", "raw_size_bytes": 2000, "token_expiry_timestamp": None,
+         "signed_cdn_url": "http://b", "source_url": "http://src/b", "is_staged": 0},
     ]
 
 
@@ -89,33 +70,22 @@ def _wire_db_for_album(mock_db, fake_album, fake_assets):
 # show_interactive_options
 # ============================================================
 
-
 def test_show_interactive_options_returns_choice():
     with patch("bunkr_api.cli.Prompt.ask", return_value="2"):
         result = show_interactive_options(
-            album_id=1,
-            page_assets=[],
-            start_idx=0,
-            total_pages=1,
-            current_page=1,
-            total_items=0,
+            album_id=1, page_assets=[], start_idx=0, total_pages=1,
+            current_page=1, total_items=0,
         )
     assert result == "2"
 
 
 def test_show_interactive_options_shows_expired_warning(capsys):
     expired_asset = {"token_expiry_timestamp": 1}
-    with (
-        patch("bunkr_api.cli.parse_and_check_expiry", return_value="[bold red]Expired[/bold red]"),
-        patch("bunkr_api.cli.Prompt.ask", return_value="q"),
-    ):
+    with patch("bunkr_api.cli.parse_and_check_expiry", return_value="[bold red]Expired[/bold red]"), \
+         patch("bunkr_api.cli.Prompt.ask", return_value="q"):
         show_interactive_options(
-            album_id=1,
-            page_assets=[expired_asset],
-            start_idx=0,
-            total_pages=1,
-            current_page=1,
-            total_items=1,
+            album_id=1, page_assets=[expired_asset], start_idx=0,
+            total_pages=1, current_page=1, total_items=1,
         )
     captured = capsys.readouterr()
     assert "EXPIRED" in captured.out
@@ -123,19 +93,11 @@ def test_show_interactive_options_shows_expired_warning(capsys):
 
 def test_show_interactive_options_no_warning_when_all_valid(capsys):
     valid_asset = {"token_expiry_timestamp": 9999999999}
-    with (
-        patch(
-            "bunkr_api.cli.parse_and_check_expiry", return_value="[bold green]Valid[/bold green]"
-        ),
-        patch("bunkr_api.cli.Prompt.ask", return_value="q"),
-    ):
+    with patch("bunkr_api.cli.parse_and_check_expiry", return_value="[bold green]Valid[/bold green]"), \
+         patch("bunkr_api.cli.Prompt.ask", return_value="q"):
         show_interactive_options(
-            album_id=1,
-            page_assets=[valid_asset],
-            start_idx=0,
-            total_pages=1,
-            current_page=1,
-            total_items=1,
+            album_id=1, page_assets=[valid_asset], start_idx=0,
+            total_pages=1, current_page=1, total_items=1,
         )
     captured = capsys.readouterr()
     assert "EXPIRED" not in captured.out
@@ -144,7 +106,6 @@ def test_show_interactive_options_no_warning_when_all_valid(capsys):
 # ============================================================
 # show_album_details
 # ============================================================
-
 
 @pytest.mark.asyncio
 async def test_show_album_details_album_not_found(mock_db, capsys):
@@ -168,15 +129,8 @@ async def test_show_album_details_quit_immediately(mock_db, fake_album, fake_ass
 @pytest.mark.asyncio
 async def test_show_album_details_pagination_bounds(mock_db, fake_album):
     many_assets = [
-        {
-            "id": i,
-            "title": f"f{i}.mp4",
-            "raw_size_bytes": 100,
-            "token_expiry_timestamp": None,
-            "signed_cdn_url": None,
-            "source_url": None,
-            "is_staged": 0,
-        }
+        {"id": i, "title": f"f{i}.mp4", "raw_size_bytes": 100, "token_expiry_timestamp": None,
+         "signed_cdn_url": None, "source_url": None, "is_staged": 0}
         for i in range(1, 16)  # 15 assets -> 2 pages at page_size=10
     ]
     _wire_db_for_album(mock_db, fake_album, many_assets)
@@ -196,11 +150,9 @@ async def test_show_album_details_stream_option(mock_db, fake_album, fake_assets
     mock_player.resolve_tokens_async = AsyncMock()
     mock_player.play_mpv = AsyncMock()
 
-    with (
-        patch("bunkr_api.cli.PlayerEngine", return_value=mock_player),
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["1", "", "mpv", "q"]),
-    ):
+    with patch("bunkr_api.cli.PlayerEngine", return_value=mock_player), \
+         patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["1", "", "mpv", "q"]):
         await show_album_details(album_id=1)
 
     mock_player.resolve_tokens_async.assert_awaited_once()
@@ -219,11 +171,9 @@ async def test_show_album_details_stream_uses_vlc_when_requested(mock_db, fake_a
     mock_player.play_vlc = AsyncMock()
     mock_player.play_mpv = AsyncMock()
 
-    with (
-        patch("bunkr_api.cli.PlayerEngine", return_value=mock_player),
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["1", "1", "vlc", "q"]),
-    ):
+    with patch("bunkr_api.cli.PlayerEngine", return_value=mock_player), \
+         patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["1", "1", "vlc", "q"]):
         await show_album_details(album_id=1)
 
     mock_player.play_vlc.assert_awaited_once()
@@ -236,12 +186,10 @@ async def test_show_album_details_download_specific(mock_db, fake_album, fake_as
     mock_downloader = MagicMock()
     mock_downloader.run = AsyncMock()
 
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=mock_downloader),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["2", "1", "q"]),
-        patch("bunkr_api.cli.IntPrompt.ask", return_value=3),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=mock_downloader), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["2", "1", "q"]), \
+         patch("bunkr_api.cli.IntPrompt.ask", return_value=3):
         await show_album_details(album_id=1)
 
     mock_downloader.run.assert_awaited_once()
@@ -252,18 +200,14 @@ async def test_show_album_details_download_specific(mock_db, fake_album, fake_as
 
 
 @pytest.mark.asyncio
-async def test_show_album_details_download_specific_blank_selection_skips(
-    mock_db, fake_album, fake_assets
-):
+async def test_show_album_details_download_specific_blank_selection_skips(mock_db, fake_album, fake_assets):
     _wire_db_for_album(mock_db, fake_album, fake_assets)
     mock_downloader = MagicMock()
     mock_downloader.run = AsyncMock()
 
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=mock_downloader),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["2", "", "q"]),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=mock_downloader), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["2", "", "q"]):
         await show_album_details(album_id=1)
 
     mock_downloader.run.assert_not_awaited()
@@ -275,12 +219,10 @@ async def test_show_album_details_download_all(mock_db, fake_album, fake_assets)
     mock_downloader = MagicMock()
     mock_downloader.run = AsyncMock()
 
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=mock_downloader),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["3", "q"]),
-        patch("bunkr_api.cli.IntPrompt.ask", return_value=2),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=mock_downloader), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["3", "q"]), \
+         patch("bunkr_api.cli.IntPrompt.ask", return_value=2):
         await show_album_details(album_id=1)
 
     dl_list = mock_downloader.run.call_args[0][0]
@@ -290,11 +232,9 @@ async def test_show_album_details_download_all(mock_db, fake_album, fake_assets)
 @pytest.mark.asyncio
 async def test_show_album_details_copy_link_valid(mock_db, fake_album, fake_assets, capsys):
     _wire_db_for_album(mock_db, fake_album, fake_assets)
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["4", "1", "", "q"]),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["4", "1", "", "q"]):
         await show_album_details(album_id=1)
 
     assert "http://a" in capsys.readouterr().out
@@ -303,11 +243,9 @@ async def test_show_album_details_copy_link_valid(mock_db, fake_album, fake_asse
 @pytest.mark.asyncio
 async def test_show_album_details_copy_link_invalid_index(mock_db, fake_album, fake_assets, capsys):
     _wire_db_for_album(mock_db, fake_album, fake_assets)
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["4", "not_a_number", "q"]),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["4", "not_a_number", "q"]):
         await show_album_details(album_id=1)
 
     assert "Invalid selection" in capsys.readouterr().out
@@ -319,12 +257,10 @@ async def test_show_album_details_mint_tokens_when_expiring(mock_db, fake_album,
     mock_db.get_needs_refresh.return_value = [{"id": 10}]
     mock_db.get_config_val.return_value = "4"
 
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.refresh_all_tokens_async", new_callable=AsyncMock) as mock_refresh,
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["5", "q"]),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.refresh_all_tokens_async", new_callable=AsyncMock) as mock_refresh, \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["5", "q"]):
         await show_album_details(album_id=1)
 
     mock_refresh.assert_awaited_once()
@@ -335,12 +271,10 @@ async def test_show_album_details_mint_tokens_none_expiring(mock_db, fake_album,
     _wire_db_for_album(mock_db, fake_album, fake_assets)
     mock_db.get_needs_refresh.return_value = []
 
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.refresh_all_tokens_async", new_callable=AsyncMock) as mock_refresh,
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["5", "q"]),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.refresh_all_tokens_async", new_callable=AsyncMock) as mock_refresh, \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["5", "q"]):
         await show_album_details(album_id=1)
 
     mock_refresh.assert_not_awaited()
@@ -350,12 +284,10 @@ async def test_show_album_details_mint_tokens_none_expiring(mock_db, fake_album,
 async def test_show_album_details_stage_album(mock_db, fake_album, fake_assets):
     mock_conn = _wire_db_for_album(mock_db, fake_album, fake_assets)
 
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.time.sleep"),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["6", "1", "q"]),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.time.sleep"), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["6", "1", "q"]):
         await show_album_details(album_id=1)
 
     executed_sql = [c.args[0] for c in mock_conn.execute.call_args_list]
@@ -367,12 +299,10 @@ async def test_show_album_details_stage_album(mock_db, fake_album, fake_assets):
 async def test_show_album_details_stage_specific_assets(mock_db, fake_album, fake_assets):
     mock_conn = _wire_db_for_album(mock_db, fake_album, fake_assets)
 
-    with (
-        patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()),
-        patch("bunkr_api.cli.time.sleep"),
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["6", "3", "1", "q"]),
-    ):
+    with patch("bunkr_api.cli.DownloadEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.PlayerEngine", return_value=MagicMock()), \
+         patch("bunkr_api.cli.time.sleep"), \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["6", "3", "1", "q"]):
         await show_album_details(album_id=1)
 
     executed = [c.args for c in mock_conn.execute.call_args_list]
@@ -386,7 +316,6 @@ async def test_show_album_details_stage_specific_assets(mock_db, fake_album, fak
 # run_scrape_interactive
 # ============================================================
 
-
 @pytest.mark.asyncio
 async def test_run_scrape_interactive_selects_album(mock_db):
     mock_session = AsyncMock()
@@ -395,28 +324,23 @@ async def test_run_scrape_interactive_selects_album(mock_db):
     mock_response = MagicMock()
     mock_response.text = "<html>fake</html>"
 
-    with (
-        patch("bunkr_api.cli.AsyncSession", return_value=mock_session),
-        patch(
-            "bunkr_api.utils.http.execute_request_with_retry_async",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ),
-        patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls,
-        patch("bunkr_api.cli.Prompt.ask", return_value="1"),
-    ):
+    with patch("bunkr_api.cli.AsyncSession", return_value=mock_session), \
+         patch(
+             "bunkr_api.utils.http.execute_request_with_retry_async",
+             new_callable=AsyncMock, return_value=mock_response,
+         ), \
+         patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls, \
+         patch("bunkr_api.cli.Prompt.ask", return_value="1"):
         mock_scraper = mock_scraper_cls.return_value
         mock_scraper.parse_albums.return_value = [
             {"title": "Album A", "url": "https://x", "file_count": "5 files"}
         ]
+        mock_scraper.extract_page_metadata.return_value = 1
         mock_scraper.scrape_album = AsyncMock(return_value=77)
 
         result = await run_scrape_interactive(
-            search_seed="query",
-            mode_seed="broad",
-            per_seed=20,
-            sort_seed="latest",
-            save_json_seed=False,
+            search_seed="query", mode_seed="broad", per_seed=20,
+            sort_seed="latest", save_json_seed=False,
         )
 
     assert result == 77
@@ -431,23 +355,18 @@ async def test_run_scrape_interactive_no_albums_returns_none(mock_db):
     mock_response = MagicMock()
     mock_response.text = "<html></html>"
 
-    with (
-        patch("bunkr_api.cli.AsyncSession", return_value=mock_session),
-        patch(
-            "bunkr_api.utils.http.execute_request_with_retry_async",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ),
-        patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls,
-    ):
+    with patch("bunkr_api.cli.AsyncSession", return_value=mock_session), \
+         patch(
+             "bunkr_api.utils.http.execute_request_with_retry_async",
+             new_callable=AsyncMock, return_value=mock_response,
+         ), \
+         patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls:
         mock_scraper_cls.return_value.parse_albums.return_value = []
+        mock_scraper_cls.return_value.extract_page_metadata.return_value = 1
 
         result = await run_scrape_interactive(
-            search_seed="query",
-            mode_seed="broad",
-            per_seed=20,
-            sort_seed="latest",
-            save_json_seed=False,
+            search_seed="query", mode_seed="broad", per_seed=20,
+            sort_seed="latest", save_json_seed=False,
         )
 
     assert result is None
@@ -461,26 +380,21 @@ async def test_run_scrape_interactive_quit_returns_none(mock_db):
     mock_response = MagicMock()
     mock_response.text = "<html></html>"
 
-    with (
-        patch("bunkr_api.cli.AsyncSession", return_value=mock_session),
-        patch(
-            "bunkr_api.utils.http.execute_request_with_retry_async",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ),
-        patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls,
-        patch("bunkr_api.cli.Prompt.ask", return_value="q"),
-    ):
+    with patch("bunkr_api.cli.AsyncSession", return_value=mock_session), \
+         patch(
+             "bunkr_api.utils.http.execute_request_with_retry_async",
+             new_callable=AsyncMock, return_value=mock_response,
+         ), \
+         patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls, \
+         patch("bunkr_api.cli.Prompt.ask", return_value="q"):
         mock_scraper_cls.return_value.parse_albums.return_value = [
             {"title": "A", "url": "https://x", "file_count": "1 file"}
         ]
+        mock_scraper_cls.return_value.extract_page_metadata.return_value = 1
 
         result = await run_scrape_interactive(
-            search_seed="query",
-            mode_seed="broad",
-            per_seed=20,
-            sort_seed="latest",
-            save_json_seed=False,
+            search_seed="query", mode_seed="broad", per_seed=20,
+            sort_seed="latest", save_json_seed=False,
         )
 
     assert result is None
@@ -490,7 +404,6 @@ async def test_run_scrape_interactive_quit_returns_none(mock_db):
 # run_top_engine_interactive
 # ============================================================
 
-
 @pytest.mark.asyncio
 async def test_run_top_engine_interactive_selects_item(mock_db):
     mock_session = AsyncMock()
@@ -499,16 +412,13 @@ async def test_run_top_engine_interactive_selects_item(mock_db):
     mock_response = MagicMock()
     mock_response.text = "<html></html>"
 
-    with (
-        patch("bunkr_api.cli.AsyncSession", return_value=mock_session),
-        patch(
-            "bunkr_api.utils.http.execute_request_with_retry_async",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ),
-        patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls,
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["24h", "1"]),
-    ):
+    with patch("bunkr_api.cli.AsyncSession", return_value=mock_session), \
+         patch(
+             "bunkr_api.utils.http.execute_request_with_retry_async",
+             new_callable=AsyncMock, return_value=mock_response,
+         ), \
+         patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls, \
+         patch("bunkr_api.cli.Prompt.ask", side_effect=["24h", "1"]):
         mock_scraper = mock_scraper_cls.return_value
         mock_scraper.parse_top_items.return_value = [
             {"title": "Trend A", "url": "https://y", "file_count": "1 file"}
@@ -528,16 +438,13 @@ async def test_run_top_engine_interactive_no_items_returns_none(mock_db):
     mock_response = MagicMock()
     mock_response.text = "<html></html>"
 
-    with (
-        patch("bunkr_api.cli.AsyncSession", return_value=mock_session),
-        patch(
-            "bunkr_api.utils.http.execute_request_with_retry_async",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ),
-        patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls,
-        patch("bunkr_api.cli.Prompt.ask", return_value="24h"),
-    ):
+    with patch("bunkr_api.cli.AsyncSession", return_value=mock_session), \
+         patch(
+             "bunkr_api.utils.http.execute_request_with_retry_async",
+             new_callable=AsyncMock, return_value=mock_response,
+         ), \
+         patch("bunkr_api.cli.ScraperEngine") as mock_scraper_cls, \
+         patch("bunkr_api.cli.Prompt.ask", return_value="24h"):
         mock_scraper_cls.return_value.parse_top_items.return_value = []
 
         result = await run_top_engine_interactive(category_seed="albums", save_json_seed=False)
@@ -548,28 +455,46 @@ async def test_run_top_engine_interactive_no_items_returns_none(mock_db):
 # ============================================================
 # _run() routing
 #
-# See the note above the test file: only --db-id and -i (the explicit flag
-# forms) actually work for jumping straight to an album. The bare-positional
-# convenience forms described in the code's own comments are dead code,
-# confirmed empirically — a single bare token always lands in `args.search`
-# (declared first), never in `args.path` (declared second), regardless of
-# whether it looks like a number or a .json filename.
+# `search` and the old `path` positional both used to compete for a single
+# bare token, with `path` always losing (confirmed empirically) — so the
+# JSON-path-via-bare-positional and numeric-ID-via-bare-positional forms
+# were dead code. Fixed: `path` was removed, and `_run()` now interprets
+# `args.search` itself in priority order (JSON path -> numeric ID -> plain
+# search term). These tests reflect the fixed behavior.
+#
+# Also NOTE: db.register_album_from_json() returns a 3-tuple
+# (new_id, new_count, updated_count), not a bare int — mocks below must
+# match that shape or the `new_id, _new_count, _updated_count = ...`
+# unpacking in cli.py will raise TypeError.
 # ============================================================
-
 
 @pytest.mark.asyncio
 async def test_run_route_explicit_json_import(mock_db, tmp_path):
     json_file = tmp_path / "album.json"
     json_file.write_text(json.dumps({"selected_album": {}, "files_found": []}))
-    mock_db.register_album_from_json.return_value = 42
+    mock_db.register_album_from_json.return_value = (42, 1, 0)
 
-    with (
-        patch("sys.argv", ["bunkr-api", "-i", str(json_file)]),
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
+    with patch("sys.argv", ["bunkr-api", "-i", str(json_file)]), \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
         await _run()
 
     mock_show.assert_awaited_once_with(42)
+
+
+@pytest.mark.asyncio
+async def test_run_route_bare_json_positional_now_works(mock_db, tmp_path):
+    """Previously dead code: a bare positional ending in .json now correctly
+    triggers the import route, same as the explicit -i flag.
+    """
+    json_file = tmp_path / "album.json"
+    json_file.write_text(json.dumps({"selected_album": {}, "files_found": []}))
+    mock_db.register_album_from_json.return_value = (43, 1, 0)
+
+    with patch("sys.argv", ["bunkr-api", str(json_file)]), \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
+        await _run()
+
+    mock_show.assert_awaited_once_with(43)
 
 
 @pytest.mark.asyncio
@@ -583,46 +508,33 @@ async def test_run_route_explicit_json_import_failure_exits(mock_db, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_route_explicit_db_id_flag(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api", "--db-id", "17"]),
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
+    with patch("sys.argv", ["bunkr-api", "--db-id", "17"]), \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
         await _run()
 
     mock_show.assert_awaited_once_with(17)
 
 
 @pytest.mark.asyncio
-async def test_run_route_bare_numeric_positional_is_NOT_treated_as_db_id(mock_db):
-    """Documents the confirmed dead-code path: a bare numeric positional
-    like `bunkr-api 17` does NOT land in args.path (it lands in
-    args.search, declared first), so it's treated as a literal search term
-    and routed to Route 3 instead of jumping straight to album 17.
+async def test_run_route_bare_numeric_positional_now_jumps_to_db_id(mock_db):
+    """Previously dead code: a bare numeric positional like `bunkr-api 17`
+    now correctly jumps straight to album 17, same as --db-id 17, instead
+    of being misrouted to Route 3 as a literal search term.
     """
-    with (
-        patch("sys.argv", ["bunkr-api", "17"]),
-        patch(
-            "bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock, return_value=None
-        ) as mock_scrape,
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
+    with patch("sys.argv", ["bunkr-api", "17"]), \
+         patch("bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock) as mock_scrape, \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
         await _run()
 
-    mock_scrape.assert_awaited_once()
-    called_kwargs = mock_scrape.call_args.kwargs
-    assert called_kwargs["search_seed"] == "17"
-    mock_show.assert_not_awaited()
+    mock_scrape.assert_not_awaited()
+    mock_show.assert_awaited_once_with(17)
 
 
 @pytest.mark.asyncio
 async def test_run_route_search_term(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api", "some search"]),
-        patch(
-            "bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock, return_value=55
-        ) as mock_scrape,
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
+    with patch("sys.argv", ["bunkr-api", "some search"]), \
+         patch("bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock, return_value=55) as mock_scrape, \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
         await _run()
 
     mock_scrape.assert_awaited_once()
@@ -631,13 +543,9 @@ async def test_run_route_search_term(mock_db):
 
 @pytest.mark.asyncio
 async def test_run_route_top_flag(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api", "--top", "albums"]),
-        patch(
-            "bunkr_api.cli.run_top_engine_interactive", new_callable=AsyncMock, return_value=66
-        ) as mock_top,
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
+    with patch("sys.argv", ["bunkr-api", "--top", "albums"]), \
+         patch("bunkr_api.cli.run_top_engine_interactive", new_callable=AsyncMock, return_value=66) as mock_top, \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
         await _run()
 
     mock_top.assert_awaited_once()
@@ -646,10 +554,8 @@ async def test_run_route_top_flag(mock_db):
 
 @pytest.mark.asyncio
 async def test_run_route_default_falls_back_to_main_loop(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api"]),
-        patch("bunkr_api.cli.main_loop", new_callable=AsyncMock) as mock_loop,
-    ):
+    with patch("sys.argv", ["bunkr-api"]), \
+         patch("bunkr_api.cli.main_loop", new_callable=AsyncMock) as mock_loop:
         await _run()
 
     mock_loop.assert_awaited_once()
@@ -669,7 +575,6 @@ async def test_run_default_route_keyboard_interrupt_exits_cleanly(mock_db):
 # main_loop
 # ============================================================
 
-
 @pytest.mark.asyncio
 async def test_main_loop_quit_exits(mock_db):
     mock_db.get_all_albums.return_value = []
@@ -678,13 +583,29 @@ async def test_main_loop_quit_exits(mock_db):
 
 
 @pytest.mark.asyncio
+async def test_main_loop_json_path_drop_imports_album(mock_db, tmp_path):
+    """main_loop has its own JSON-drop handling, separate from _run()'s
+    Route 1 — dropping a path ending in .json directly at the main prompt
+    imports it and opens the resulting album.
+    """
+    mock_db.get_all_albums.return_value = []
+    json_file = tmp_path / "album.json"
+    json_file.write_text(json.dumps({"selected_album": {}, "files_found": []}))
+    mock_db.register_album_from_json.return_value = (9, 1, 0)
+
+    with patch("bunkr_api.cli.Prompt.ask", side_effect=[str(json_file), "q"]), \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
+        await main_loop()
+
+    mock_show.assert_awaited_once_with(9)
+
+
+@pytest.mark.asyncio
 async def test_main_loop_numeric_selection_opens_album(mock_db):
     mock_db.get_all_albums.return_value = [{"id": 5, "title": "A", "file_count": 1, "is_staged": 0}]
 
-    with (
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["1", "q"]),
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
+    with patch("bunkr_api.cli.Prompt.ask", side_effect=["1", "q"]), \
+         patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show:
         await main_loop()
 
     mock_show.assert_awaited_once_with(5)
@@ -694,12 +615,8 @@ async def test_main_loop_numeric_selection_opens_album(mock_db):
 async def test_main_loop_search_shortcut(mock_db):
     mock_db.get_all_albums.return_value = []
 
-    with (
-        patch("bunkr_api.cli.Prompt.ask", side_effect=["s", "q"]),
-        patch(
-            "bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock, return_value=None
-        ) as mock_scrape,
-    ):
+    with patch("bunkr_api.cli.Prompt.ask", side_effect=["s", "q"]), \
+         patch("bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock, return_value=None) as mock_scrape:
         await main_loop()
 
     mock_scrape.assert_awaited_once()
@@ -734,12 +651,9 @@ async def test_main_loop_invalid_selection_shows_error(mock_db, capsys):
 # main
 # ============================================================
 
-
 def test_main_wraps_run_via_asyncio_run(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api"]),
-        patch("bunkr_api.cli.main_loop", new_callable=AsyncMock) as mock_loop,
-    ):
+    with patch("sys.argv", ["bunkr-api"]), \
+         patch("bunkr_api.cli.main_loop", new_callable=AsyncMock) as mock_loop:
         main()
 
     mock_loop.assert_awaited_once()

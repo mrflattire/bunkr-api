@@ -11,13 +11,16 @@ from bunkr_api.core.scraper import ScraperEngine
 # Both `execute_request_with_retry_async` and `slugify_filename` are
 # imported at the TOP of scraper.py, so they're patched where they're
 # looked up: "bunkr_api.core.scraper.<name>".
+#
+# NOTE: register_album_from_json now returns (album_id, new_count,
+# updated_count) — a 3-tuple, not a bare int — and scrape_album unpacks
+# all three, so every mock below must match that shape.
 # ============================================================
 
 
 # ============================================================
 # _safe_int
 # ============================================================
-
 
 @pytest.mark.parametrize(
     "value, expected",
@@ -40,7 +43,6 @@ def test_safe_int(value, expected):
 # ============================================================
 # standardize_top_url
 # ============================================================
-
 
 def test_standardize_top_url_converts_v_and_i_to_f():
     engine = ScraperEngine(db=MagicMock())
@@ -88,7 +90,7 @@ def test_parse_albums_extracts_title_url_and_file_count():
     assert titles["My Album"]["file_count"] == "10 files"
 
 
-def test_parse_albums_defaults_file_count_when_no_file_span(temp_db=None):
+def test_parse_albums_defaults_file_count_when_no_file_span():
     engine = ScraperEngine(db=MagicMock())
     albums = engine.parse_albums(ALBUMS_HTML)
     titles = {a["title"]: a for a in albums}
@@ -159,15 +161,34 @@ def test_parse_top_items_albums_category_does_not_standardize_url():
 
 
 # ============================================================
-# parse_album_header_metadata
+# extract_page_metadata
 # ============================================================
-
 
 def _soup(html):
     from bs4 import BeautifulSoup
-
     return BeautifulSoup(html, "html.parser")
 
+
+def test_extract_page_metadata_from_footer_div():
+    engine = ScraperEngine(db=MagicMock())
+    html = '<div class="text-xs text-[var(--text-soft)] mono">Page 2 of 15</div>'
+    assert engine.extract_page_metadata(_soup(html)) == "15"
+
+
+def test_extract_page_metadata_from_top_span_fallback():
+    engine = ScraperEngine(db=MagicMock())
+    html = '<p><span class="text-[var(--text)]">x</span> showing page 3 of 9</p>'
+    assert engine.extract_page_metadata(_soup(html)) == "9"
+
+
+def test_extract_page_metadata_returns_unknown_when_neither_present():
+    engine = ScraperEngine(db=MagicMock())
+    assert engine.extract_page_metadata(_soup("<div></div>")) == "Unknown"
+
+
+# ============================================================
+# parse_album_header_metadata
+# ============================================================
 
 def test_parse_album_header_metadata_extracts_size_and_count():
     engine = ScraperEngine(db=MagicMock())
@@ -184,7 +205,7 @@ def test_parse_album_header_metadata_missing_element_returns_none_none():
     assert count is None
 
 
-def test_parse_album_header_metadata_no_parens_leaves_size_none(temp_db=None):
+def test_parse_album_header_metadata_no_parens_leaves_size_none():
     engine = ScraperEngine(db=MagicMock())
     html = '<div class="visitors"><span class="font-semibold">no parens here</span></div>'
     size, count = engine.parse_album_header_metadata(_soup(html))
@@ -195,7 +216,6 @@ def test_parse_album_header_metadata_no_parens_leaves_size_none(temp_db=None):
 # ============================================================
 # extract_advanced_album_files
 # ============================================================
-
 
 def test_extract_advanced_album_files_parses_full_object():
     engine = ScraperEngine(db=MagicMock())
@@ -232,10 +252,10 @@ def test_extract_advanced_album_files_no_match_returns_empty_list():
 def test_extract_advanced_album_files_multiple_objects():
     engine = ScraperEngine(db=MagicMock())
     html = (
-        "<script>window.albumFiles = ["
+        '<script>window.albumFiles = ['
         '{id: 1, name: "a.mp4", size: 100}, '
         '{id: 2, name: "b.mp4", size: 200}'
-        "];</script>"
+        '];</script>'
     )
     files = engine.extract_advanced_album_files(html)
     assert len(files) == 2
@@ -253,13 +273,14 @@ def test_extract_advanced_album_files_missing_size_defaults_to_zero():
 # scrape_album
 # ============================================================
 
-SAMPLE_ALBUM_HTML = """
+def _sample_album_html(title_suffix=" - Bunkr"):
+    return f"""
 <html>
-<head><title>My Great Album - Bunkr</title></head>
+<head><title>My Great Album{title_suffix}</title></head>
 <body>
   <div class="visitors"><span class="font-semibold">(1.82 GB) 1 files</span></div>
   <script>
-  window.albumFiles = [{id: 1, name: "a.mp4", slug: "a-slug", original: "A Original.mp4", size: 1048576}];
+  window.albumFiles = [{{id: 1, name: "a.mp4", slug: "a-slug", original: "A Original.mp4", size: 1048576}}];
   </script>
 </body>
 </html>
@@ -269,21 +290,18 @@ SAMPLE_ALBUM_HTML = """
 @pytest.mark.asyncio
 async def test_scrape_album_builds_optimized_url_and_registers(temp_db):
     engine = ScraperEngine(temp_db)
-    temp_db.register_album_from_json = MagicMock(return_value=99)
+    temp_db.register_album_from_json = MagicMock(return_value=(99, 1, 0))
     mock_session = AsyncMock()
     mock_response = MagicMock()
-    mock_response.text = SAMPLE_ALBUM_HTML
+    mock_response.text = _sample_album_html()
 
     with patch(
         "bunkr_api.core.scraper.execute_request_with_retry_async",
-        new_callable=AsyncMock,
-        return_value=mock_response,
+        new_callable=AsyncMock, return_value=mock_response,
     ) as mock_fetch:
         album_id = await engine.scrape_album(
-            mock_session,
-            "https://bunkr.cr/a/xyz?foo=bar",
-            search_term="test",
-            album_number_index=1,
+            mock_session, "https://bunkr.cr/a/my-slug-here?foo=bar",
+            search_term="test", album_number_index=1,
         )
 
     assert album_id == 99
@@ -294,30 +312,65 @@ async def test_scrape_album_builds_optimized_url_and_registers(temp_db):
     data_arg = temp_db.register_album_from_json.call_args[0][0]
     assert data_arg["selected_album"]["title"] == "My Great Album"
     assert data_arg["selected_album"]["aggregate_size"] == "1.82 GB"
+    assert data_arg["selected_album"]["album_slug"] == "my-slug-here"
+    assert data_arg["selected_album"]["album_url"] == "https://bunkr.cr/a/my-slug-here?foo=bar"
     assert len(data_arg["files_found"]) == 1
     assert data_arg["files_found"][0]["true_file_id"] == 1
 
 
 @pytest.mark.asyncio
-async def test_scrape_album_save_json_writes_file(temp_db, tmp_path):
+async def test_scrape_album_strips_pipe_separated_bunkr_suffix(temp_db):
+    """Title stripping now handles both ' - Bunkr' and ' | Bunkr' suffixes."""
     engine = ScraperEngine(temp_db)
-    temp_db.register_album_from_json = MagicMock(return_value=5)
+    temp_db.register_album_from_json = MagicMock(return_value=(1, 1, 0))
     mock_session = AsyncMock()
     mock_response = MagicMock()
-    mock_response.text = SAMPLE_ALBUM_HTML
+    mock_response.text = _sample_album_html(title_suffix=" | Bunkr")
 
     with patch(
         "bunkr_api.core.scraper.execute_request_with_retry_async",
-        new_callable=AsyncMock,
-        return_value=mock_response,
+        new_callable=AsyncMock, return_value=mock_response,
+    ):
+        await engine.scrape_album(mock_session, "https://bunkr.cr/a/xyz", search_term="t")
+
+    data_arg = temp_db.register_album_from_json.call_args[0][0]
+    assert data_arg["selected_album"]["title"] == "My Great Album"
+
+
+@pytest.mark.asyncio
+async def test_scrape_album_no_slug_in_url_sets_album_slug_none(temp_db):
+    engine = ScraperEngine(temp_db)
+    temp_db.register_album_from_json = MagicMock(return_value=(1, 1, 0))
+    mock_session = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.text = _sample_album_html()
+
+    with patch(
+        "bunkr_api.core.scraper.execute_request_with_retry_async",
+        new_callable=AsyncMock, return_value=mock_response,
+    ):
+        await engine.scrape_album(mock_session, "https://bunkr.cr/not-an-album-url", search_term="t")
+
+    data_arg = temp_db.register_album_from_json.call_args[0][0]
+    assert data_arg["selected_album"]["album_slug"] is None
+
+
+@pytest.mark.asyncio
+async def test_scrape_album_save_json_writes_file(temp_db, tmp_path):
+    engine = ScraperEngine(temp_db)
+    temp_db.register_album_from_json = MagicMock(return_value=(5, 1, 0))
+    mock_session = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.text = _sample_album_html()
+
+    with patch(
+        "bunkr_api.core.scraper.execute_request_with_retry_async",
+        new_callable=AsyncMock, return_value=mock_response,
     ):
         await engine.scrape_album(
-            mock_session,
-            "https://bunkr.cr/a/xyz",
-            search_term="t",
-            album_number_index=2,
-            save_json=True,
-            output_dir=tmp_path,
+            mock_session, "https://bunkr.cr/a/xyz",
+            search_term="t", album_number_index=2,
+            save_json=True, output_dir=tmp_path,
         )
 
     json_files = list(tmp_path.glob("*.json"))
@@ -329,29 +382,21 @@ async def test_scrape_album_save_json_writes_file(temp_db, tmp_path):
 @pytest.mark.asyncio
 async def test_scrape_album_save_json_failure_does_not_raise(temp_db, tmp_path):
     engine = ScraperEngine(temp_db)
-    temp_db.register_album_from_json = MagicMock(return_value=5)
+    temp_db.register_album_from_json = MagicMock(return_value=(5, 1, 0))
     mock_session = AsyncMock()
     mock_response = MagicMock()
-    mock_response.text = SAMPLE_ALBUM_HTML
+    mock_response.text = _sample_album_html()
 
-    with (
-        patch(
-            "bunkr_api.core.scraper.execute_request_with_retry_async",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ),
-        patch(
-            "bunkr_api.core.scraper.asyncio.to_thread",
-            side_effect=OSError("disk full"),
-        ),
+    with patch(
+        "bunkr_api.core.scraper.execute_request_with_retry_async",
+        new_callable=AsyncMock, return_value=mock_response,
+    ), patch(
+        "bunkr_api.core.scraper.asyncio.to_thread",
+        side_effect=OSError("disk full"),
     ):
-        # Should not raise despite the write failure — caught and logged.
         album_id = await engine.scrape_album(
-            mock_session,
-            "https://bunkr.cr/a/xyz",
-            search_term="t",
-            save_json=True,
-            output_dir=tmp_path,
+            mock_session, "https://bunkr.cr/a/xyz",
+            search_term="t", save_json=True, output_dir=tmp_path,
         )
 
     assert album_id == 5
@@ -360,15 +405,14 @@ async def test_scrape_album_save_json_failure_does_not_raise(temp_db, tmp_path):
 @pytest.mark.asyncio
 async def test_scrape_album_defaults_when_header_metadata_missing(temp_db):
     engine = ScraperEngine(temp_db)
-    temp_db.register_album_from_json = MagicMock(return_value=1)
+    temp_db.register_album_from_json = MagicMock(return_value=(1, 0, 0))
     mock_session = AsyncMock()
     mock_response = MagicMock()
     mock_response.text = "<html><head><title>No Meta - Bunkr</title></head><body></body></html>"
 
     with patch(
         "bunkr_api.core.scraper.execute_request_with_retry_async",
-        new_callable=AsyncMock,
-        return_value=mock_response,
+        new_callable=AsyncMock, return_value=mock_response,
     ):
         await engine.scrape_album(mock_session, "https://bunkr.cr/a/xyz", search_term="t")
 
@@ -376,3 +420,34 @@ async def test_scrape_album_defaults_when_header_metadata_missing(temp_db):
     assert data_arg["selected_album"]["aggregate_size"] == "0 MB"
     assert data_arg["selected_album"]["clean_file_count"] == "0 files"
     assert data_arg["files_found"] == []
+
+
+@pytest.mark.asyncio
+async def test_scrape_album_prints_differentiated_feedback_for_new_vs_updated(temp_db, capsys):
+    """scrape_album now gives distinct feedback depending on whether files
+    were new, updated, or the album was already fully up to date — confirm
+    each branch actually fires rather than always printing the same message.
+    """
+    engine = ScraperEngine(temp_db)
+    mock_session = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.text = _sample_album_html()
+
+    with patch(
+        "bunkr_api.core.scraper.execute_request_with_retry_async",
+        new_callable=AsyncMock, return_value=mock_response,
+    ):
+        temp_db.register_album_from_json = MagicMock(return_value=(1, 2, 3))
+        await engine.scrape_album(mock_session, "https://bunkr.cr/a/xyz", search_term="t")
+        mixed_output = capsys.readouterr().out
+        assert "new" in mixed_output and "refreshed" in mixed_output
+
+        temp_db.register_album_from_json = MagicMock(return_value=(1, 2, 0))
+        await engine.scrape_album(mock_session, "https://bunkr.cr/a/xyz", search_term="t")
+        new_only_output = capsys.readouterr().out
+        assert "Registered" in new_only_output
+
+        temp_db.register_album_from_json = MagicMock(return_value=(1, 0, 3))
+        await engine.scrape_album(mock_session, "https://bunkr.cr/a/xyz", search_term="t")
+        up_to_date_output = capsys.readouterr().out
+        assert "already up to date" in up_to_date_output

@@ -17,10 +17,12 @@ CDN_NODES = [
     "c1be-b.cdn.cr",
     "c3pz-b.cdn.cr",
     "c2ch-b.cdn.cr",
+    "c5bu-b.cdn.cr",
+    "c2ke-b.cdn.cr",
     "prxp-b.cdn.cr"
 ]
 
-target_url = "https://prxp-b.cdn.cr/storage/media/VTS_01_5-DUzavUbJ.VOB?n=VTS_01_5.VOB&token=12d6f221ee281f73697cbdd009a0443bb973af8e&ex=1784410577"
+target_url = "https://prxp-b.cdn.cr/storage/media/4997918652678249911-bj6Y.mov?n=4997918652678249911.mov&token=2f68a475daf7565fba55751d9baaecc2ce04ec7d&ex=1785353344"
 
 def benchmark_cdn_nodes(original_url, nodes):
     # Extract path and query parameters
