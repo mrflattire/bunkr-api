@@ -310,14 +310,17 @@ class Inspector:
                         console.print("[yellow]No valid album ids in selection.[/yellow]")
                         return
 
-                    found = [r[0] for r in conn.execute(
-                        f"SELECT id FROM albums WHERE id IN ({','.join('?' for _ in ids)})", ids
-                    ).fetchall()]
-                    if not found:
+                    found_rows = conn.execute(
+                        f"SELECT id, title FROM albums WHERE id IN ({','.join('?' for _ in ids)})", ids
+                    ).fetchall()
+                    if not found_rows:
                         console.print(f"[yellow]None of the requested album id(s) exist: {ids}[/yellow]")
                         return
 
-                    if not force and not Confirm.ask(f"Delete album ID(s) {found}?"):
+                    found = [r["id"] for r in found_rows]
+                    labels = [f"#{r['id']} \"{r['title']}\"" for r in found_rows]
+
+                    if not force and not Confirm.ask(f"Delete album(s) {', '.join(labels)}?"):
                         return
 
                     placeholders = ",".join("?" for _ in found)
@@ -326,7 +329,9 @@ class Inspector:
                     conn.commit()
                     # cursor.rowcount here, not len(ids) — same reporting-
                     # accuracy issue as toggle_staging otherwise.
-                    console.print(f"[green]Deleted {cursor.rowcount} album(s).[/green]")
+                    console.print(f"[green]Deleted {cursor.rowcount} album(s):[/green]")
+                    for label in labels:
+                        console.print(f"  [dim]-[/dim] {label}")
                 except sqlite3.Error as e:
                     console.print(f"[red]Wipe failed: {e}[/red]")
 
