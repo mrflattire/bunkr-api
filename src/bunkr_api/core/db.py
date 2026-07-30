@@ -219,6 +219,48 @@ class DatabaseManager:
         with closing(self._get_connection()) as conn:
             return conn.execute("SELECT * FROM albums ORDER BY updated_at DESC;").fetchall()
 
+    def get_album(self, album_id: int) -> sqlite3.Row | None:
+        """Returns a single album's row, or None if no such album exists."""
+        with closing(self._get_connection()) as conn:
+            return conn.execute("SELECT * FROM albums WHERE id = ?;", (album_id,)).fetchone()
+
+    def delete_album(self, album_id: int) -> bool:
+        """Deletes an album and all its assets (cascades via the assets
+        table's ON DELETE CASCADE foreign key — foreign_keys is enabled on
+        every connection in _get_connection()).
+
+        Returns True if a row was actually deleted, False if no album with
+        that id existed.
+        """
+        with closing(self._get_connection()) as conn, conn:
+            cursor = conn.execute("DELETE FROM albums WHERE id = ?;", (album_id,))
+            return cursor.rowcount > 0
+
+    def get_staged_assets(self) -> list[sqlite3.Row]:
+        """Returns every asset flagged as staged — either directly, or via
+        its parent album being staged — joined with the parent album's
+        title for display/download purposes.
+        """
+        with closing(self._get_connection()) as conn:
+            return conn.execute("""
+                SELECT a.*, al.title AS album_title FROM assets a
+                LEFT JOIN albums al ON a.album_id = al.id
+                WHERE a.is_staged = 1 OR al.is_staged = 1
+                ORDER BY a.album_id, a.track_number ASC;
+            """).fetchall()
+
+    def get_failed_assets(self) -> list[sqlite3.Row]:
+        """Returns every asset currently marked FAILED, joined with its
+        parent album's title.
+        """
+        with closing(self._get_connection()) as conn:
+            return conn.execute("""
+                SELECT a.*, al.title AS album_title FROM assets a
+                LEFT JOIN albums al ON a.album_id = al.id
+                WHERE a.download_status = 'FAILED'
+                ORDER BY a.album_id, a.track_number ASC;
+            """).fetchall()
+
     def get_album_assets(self, album_id: int) -> list[sqlite3.Row]:
         with closing(self._get_connection()) as conn:
             return conn.execute(
