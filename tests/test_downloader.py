@@ -712,16 +712,14 @@ def test_main_staged_mode_queries_and_runs():
         patch("bunkr_api.media.downloader.DownloadEngine") as mock_engine_cls,
     ):
         mock_db = mock_db_cls.return_value
-        mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchall.return_value = [
+        mock_db.get_staged_assets.return_value = [
             {"id": 1, "album_id": 5, "title": "s.mp4", "is_staged": 1}
         ]
-        mock_db.connection.return_value.__enter__.return_value = mock_conn
-        mock_db.connection.return_value.__exit__.return_value = False
         mock_engine = _mock_engine(mock_engine_cls)
 
         main()
 
+    mock_db.get_staged_assets.assert_called_once()
     mock_engine.run.assert_awaited_once()
     files_list = mock_engine.run.call_args[0][0]
     assert len(files_list) == 1
@@ -735,16 +733,14 @@ def test_main_triage_mode_queries_failed_and_runs():
         patch("bunkr_api.media.downloader.DownloadEngine") as mock_engine_cls,
     ):
         mock_db = mock_db_cls.return_value
-        mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchall.return_value = [
+        mock_db.get_failed_assets.return_value = [
             {"id": 2, "album_id": 9, "title": "failed.mp4", "download_status": "FAILED"}
         ]
-        mock_db.connection.return_value.__enter__.return_value = mock_conn
-        mock_db.connection.return_value.__exit__.return_value = False
         mock_engine = _mock_engine(mock_engine_cls)
 
         main()
 
+    mock_db.get_failed_assets.assert_called_once()
     mock_engine.run.assert_awaited_once()
     assert mock_engine.run.call_args[0][0][0]["db_asset_id"] == 2
 
