@@ -358,32 +358,19 @@ def main():
 
     if run_staged:
         console.print("[bold cyan][*] Extracting all staged files...[/bold cyan]")
-        assets = db.get_all_albums() # Dummy fetch to use connection
-        with db.connection() as conn:
-            rows = conn.execute("""
-                SELECT a.*, al.title AS album_title FROM assets a
-                LEFT JOIN albums al ON a.album_id = al.id
-                WHERE a.is_staged = 1 OR al.is_staged = 1
-                ORDER BY a.album_id, a.track_number ASC;
-            """).fetchall()
-            for r in rows:
-                d = dict(r)
-                d['db_asset_id'] = d['id']
-                files_list.append(d)
+        rows = db.get_staged_assets()
+        for r in rows:
+            d = dict(r)
+            d['db_asset_id'] = d['id']
+            files_list.append(d)
 
     elif run_triage:
         console.print("[bold red][*] Auto-Triage: Retrying failed downloads...[/bold red]")
-        with db.connection() as conn:
-            rows = conn.execute("""
-                SELECT a.*, al.title AS album_title FROM assets a
-                LEFT JOIN albums al ON a.album_id = al.id
-                WHERE a.download_status = 'FAILED'
-                ORDER BY a.album_id, a.track_number ASC;
-            """).fetchall()
-            for r in rows:
-                d = dict(r)
-                d['db_asset_id'] = d['id']
-                files_list.append(d)
+        rows = db.get_failed_assets()
+        for r in rows:
+            d = dict(r)
+            d['db_asset_id'] = d['id']
+            files_list.append(d)
 
     elif db_id:
         with db.connection() as conn:
