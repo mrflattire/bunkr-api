@@ -7,6 +7,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
+from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 from rich.console import Console
 from rich.panel import Panel
@@ -240,21 +241,26 @@ async def run_scrape_interactive(search_seed=None, mode_seed=None, per_seed=None
             
             from .utils.http import execute_request_with_retry_async
             res = await execute_request_with_retry_async(session, search_url)
+            soup = BeautifulSoup(res.text, 'html.parser')
             albums = scraper.parse_albums(res.text)
+            total_pages = scraper.extract_page_metadata(soup)
             
             if not albums:
                 console.print("[bold red][!] No albums discovered.[/bold red]")
                 if current_page > 1: current_page -= 1; continue
                 return None
 
-            table = Table(title=f"Search Results: {search_term or 'Homepage'} (Page {current_page})", style="dim white")
+            start_idx = ((current_page - 1) * url_per) + 1
+            end_idx = start_idx + len(albums) - 1
+
+            display_search = f'"{search_term}"' if search_term else '"Homepage"'
+            header_title = f"{display_search} Results Page {current_page} of {total_pages} (Items {start_idx}-{end_idx} loaded) Mode: {url_mode}"
+            table = Table(title=header_title, style="dim white")
             table.add_column("#", justify="right", style="magenta")
             table.add_column("Title / Target Album", style="white")
             table.add_column("Files (Est.)", justify="center", style="green")
             table.add_column("Source URL", style="blue")
             
-            start_idx = ((current_page - 1) * url_per) + 1
-            end_idx = start_idx + len(albums) - 1
             for i, album in enumerate(albums, start=start_idx):
                 table.add_row(str(i), album['title'][:60], album.get('file_count', '???'), album['url'][:40] + "...")
             console.print(table)
@@ -368,7 +374,7 @@ async def main_loop():
             try:
                 with open(processed_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                new_id = db.register_album_from_json(data)
+                new_id, _new_count, _updated_count = db.register_album_from_json(data)
                 await show_album_details(new_id)
                 continue
             except Exception as e: # noqa: BLE001 
@@ -391,14 +397,18 @@ async def main_loop():
             if not del_spec: continue
             try:
                 indices = parse_selection(del_spec, total_items=len(albums))
-                target_ids = [albums[idx-1]['id'] for idx in indices]
-                
-                if Prompt.ask(f"Permanently delete {len(target_ids)} album(s)?", choices=["y", "n"], default="n") == "y":
+                targets = [albums[idx-1] for idx in indices]
+                target_ids = [a['id'] for a in targets]
+                labels = [f"#{a['id']} \"{a['title']}\"" for a in targets]
+
+                if Prompt.ask(f"Permanently delete {', '.join(labels)}?", choices=["y", "n"], default="n") == "y":
                     with db.connection() as conn:
                         p_holders = ",".join("?" for _ in target_ids)
                         conn.execute(f"DELETE FROM assets WHERE album_id IN ({p_holders})", target_ids)
                         conn.execute(f"DELETE FROM albums WHERE id IN ({p_holders})", target_ids)
-                    console.print("[bold green][+][/bold green] Deletion successful.")
+                    console.print("[bold green][+][/bold green] Deleted:")
+                    for label in labels:
+                        console.print(f"  [dim]-[/dim] {label}")
             except Exception as e: # noqa: BLE001 
                 console.print(f"[red][!] Deletion failed: {e}[/red]")
             continue
@@ -445,28 +455,32 @@ Master Help - Related Binaries:
     parser.add_argument('--db-id', type=int, help="Jump directly to an album in database by ID.")
     parser.add_argument('-i', '--input', type=str, help="Import a legacy JSON file and view it.")
     
-    # Catch bare positional argument from original read.py
-    parser.add_argument('path', nargs='?', help=argparse.SUPPRESS)
+    # NOTE: previously there was a second `path` positional here meant to
+    # catch a bare numeric ID or JSON path. Since `search` (declared above)
+    # is also an optional positional, argparse always assigns a single bare
+    # token to `search` first — `path` could never actually receive it
+    # (confirmed empirically). Removed in favor of interpreting args.search
+    # itself below, in priority order: JSON path -> numeric ID -> search term.
 
     args = parser.parse_args()
 
-    # Route 1: Handle Import (-i or positional JSON path)
-    target_path = args.input or (args.path if args.path and args.path.endswith('.json') else None)
+    # Route 1: Handle Import (-i or a bare positional ending in .json)
+    target_path = args.input or (args.search if args.search and args.search.endswith('.json') else None)
     if target_path:
         processed = clean_dragged_path(target_path)
         if os.path.exists(processed):
             try:
                 with open(processed, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                new_id = db.register_album_from_json(data)
+                new_id, _new_count, _updated_count = db.register_album_from_json(data)
                 await show_album_details(new_id)
                 return
             except Exception as e: # noqa: BLE001 
                 console.print(f"[bold red][!] Import failed: {e}[/bold red]")
                 sys.exit(1)
 
-    # Route 2: Handle Direct Jump (--db-id or positional numeric ID)
-    raw_val = args.db_id or (int(args.path) if args.path and args.path.isdigit() else None)
+    # Route 2: Handle Direct Jump (--db-id or a bare numeric positional)
+    raw_val = args.db_id or (int(args.search) if args.search and args.search.isdigit() else None)
     if raw_val:
         await show_album_details(raw_val)
         return
