@@ -32,9 +32,21 @@ class BunkrAPI:
         """Returns all cataloged albums in the database."""
         return [dict(r) for r in self.db.get_all_albums()]
 
+    def get_album(self, album_id: int) -> dict | None:
+        """Returns a single album's metadata, or None if it doesn't exist."""
+        row = self.db.get_album(album_id)
+        return dict(row) if row else None
+
     def get_assets(self, album_id: int) -> list:
         """Returns all assets for a specific album ID."""
         return [dict(r) for r in self.db.get_album_assets(album_id)]
+
+    def get_valid_url(self, asset_id: int) -> str:
+        """Returns a fresh, valid signed CDN URL for a single asset,
+        re-minting a new token if the cached one is missing or expiring
+        soon. Returns "" if no asset with that id exists.
+        """
+        return self.db.get_valid_url(asset_id)
 
     # ============================================================
     # SCRAPING & RESOLUTION
@@ -67,6 +79,20 @@ class BunkrAPI:
                 save_json=save_json
             )
 
+    async def resolve_and_download(
+        self, album_url: str, search_context: str = "API_User",
+        workers: int = 3, output_dir: Path = DEFAULT_OUTPUT_DIR, save_json: bool = False,
+    ) -> int:
+        """
+        One-shot convenience: scrapes+registers a bunkr album URL, then
+        immediately downloads it. Equivalent to calling resolve_album()
+        followed by download_album() yourself.
+        :return: The database ID of the resolved album.
+        """
+        album_id = await self.resolve_album(album_url, search_context=search_context, save_json=save_json)
+        await self.download_album(album_id, workers=workers, output_dir=output_dir)
+        return album_id
+
     # ============================================================
     # MEDIA EXECUTION
     # ============================================================
@@ -93,6 +119,36 @@ class BunkrAPI:
             dl_list.append(d)
 
         # 3. Await the downloader run
+        await self.downloader.run(dl_list, workers=workers, output_dir=output_dir)
+
+    def _prepare_dl_list(self, assets) -> list[dict]:
+        """Shared prep for download_staged/retry_failed: both fetch rows
+        that already carry album_title via a JOIN (unlike get_album_assets,
+        which doesn't), so they only need db_asset_id added.
+        """
+        dl_list = []
+        for a in assets:
+            d = dict(a)
+            d['db_asset_id'] = d['id']
+            dl_list.append(d)
+        return dl_list
+
+    async def download_staged(self, workers: int = 3, output_dir: Path = DEFAULT_OUTPUT_DIR):
+        """
+        Downloads every asset currently flagged as staged — either directly,
+        or via its parent album being staged. A no-op if nothing is staged.
+        """
+        assets = self.db.get_staged_assets()
+        dl_list = self._prepare_dl_list(assets)
+        await self.downloader.run(dl_list, workers=workers, output_dir=output_dir)
+
+    async def retry_failed(self, workers: int = 3, output_dir: Path = DEFAULT_OUTPUT_DIR):
+        """
+        Retries every asset currently marked FAILED. A no-op if nothing has
+        failed.
+        """
+        assets = self.db.get_failed_assets()
+        dl_list = self._prepare_dl_list(assets)
         await self.downloader.run(dl_list, workers=workers, output_dir=output_dir)
 
     async def stream_album(self, album_id: int, indices_spec: str = "all", player: str = "mpv"):
@@ -139,3 +195,12 @@ class BunkrAPI:
         if expiring_assets:
             max_workers = int(self.db.get_config_val("max_workers", "4"))
             await refresh_all_tokens_async(self.db, expiring_assets, max_workers)
+
+    def delete_album(self, album_id: int) -> bool:
+        """
+        Deletes an album and all its assets. Cascades automatically at the
+        database level, so nothing further needs cleaning up.
+        :return: True if an album was actually deleted, False if no album
+            with that id existed.
+        """
+        return self.db.delete_album(album_id)
