@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from rich.console import Console
 
 from ..config import (
+    DEFAULT_JSON_DIR,
     DEFAULT_OUTPUT_DIR,
     HEADERS,
     SEARCH_MODES,
@@ -278,7 +279,7 @@ def main():
     parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Sort by")
     parser.add_argument("-t", "--top", nargs="?", const="prompt", help="Trending category")
     parser.add_argument("--save-json", action="store_true", help="Save backup JSON")
-    parser.add_argument("-o", "--output", type=str, default=None, help="Output directory for a JSON metadata")
+    parser.add_argument("-o", "--output", type=str, default=str(DEFAULT_JSON_DIR), help="Output directory for a JSON metadata")
     
     args = parser.parse_args()
 
