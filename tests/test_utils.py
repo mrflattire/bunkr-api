@@ -1,5 +1,7 @@
 import pytest
-from bunkr_api.utils.formatting import slugify_filename, parse_selection, format_bytes
+
+from bunkr_api.utils.formatting import format_bytes, parse_selection, slugify_filename
+
 
 def test_slugify():
     assert slugify_filename(1, "Hello World!") == "01_Hello_World"
