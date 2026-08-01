@@ -1,6 +1,6 @@
 from pathlib import Path
 
-VERSION = "0.1.0-beta.2"
+VERSION = "0.1.0-beta.3"
 
 APP_DIR = Path.home() / ".bunkr_api"
 APP_DIR.mkdir(parents=True, exist_ok=True)
