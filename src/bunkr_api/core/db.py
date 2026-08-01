@@ -237,17 +237,40 @@ class DatabaseManager:
             return cursor.rowcount > 0
 
     def get_staged_assets(self) -> list[sqlite3.Row]:
-        """Returns every asset flagged as staged — either directly, or via
-        its parent album being staged — joined with the parent album's
-        title for display/download purposes.
+        """Returns every asset flagged as staged, joined with its parent
+        album's title.
+
+        Filters on the asset-level flag only. The album-level is_staged
+        flag is a display convenience (shows a '[STAGED]' badge in the
+        catalog for an album with any staged items) — it is deliberately
+        NOT used to gate which assets get downloaded here. Staging a whole
+        album sets both flags at once (see toggle_staging), but downloads
+        only ever clear the asset-level flag as each file finishes, so
+        joining on the album-level flag here would keep resurfacing
+        already-completed files for as long as any sibling asset in that
+        album remains staged.
         """
         with closing(self._get_connection()) as conn:
             return conn.execute("""
                 SELECT a.*, al.title AS album_title FROM assets a
                 LEFT JOIN albums al ON a.album_id = al.id
-                WHERE a.is_staged = 1 OR al.is_staged = 1
+                WHERE a.is_staged = 1
                 ORDER BY a.album_id, a.track_number ASC;
             """).fetchall()
+
+    def sync_album_staged_flag(self, album_id: int):
+        """Clears an album's is_staged badge once none of its assets are
+        still staged. Call this after an asset's is_staged flag is cleared
+        (e.g. on download completion) so the catalog's '[STAGED]' display
+        doesn't keep showing an album as staged after every file in it is
+        actually done.
+        """
+        with closing(self._get_connection()) as conn, conn:
+            remaining = conn.execute(
+                "SELECT COUNT(*) AS c FROM assets WHERE album_id = ? AND is_staged = 1", (album_id,)
+            ).fetchone()["c"]
+            if remaining == 0:
+                conn.execute("UPDATE albums SET is_staged = 0 WHERE id = ?;", (album_id,))
 
     def get_failed_assets(self) -> list[sqlite3.Row]:
         """Returns every asset currently marked FAILED, joined with its

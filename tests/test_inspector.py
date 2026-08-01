@@ -255,9 +255,13 @@ def test_resolve_bound_returns_max_id(insp):
 # ============================================================
 
 def test_toggle_staging_stage_album_cascades_to_assets(insp, capsys):
-    album_id = _seed_album(insp.db, files=[{"href": "https://x/1", "title": "f1.mp4"}])
+    album_id = _seed_album(insp.db, title="Feedback Album", files=[{"href": "https://x/1", "title": "f1.mp4"}])
     insp.toggle_staging("album", str(album_id), state=1)
-    assert "staged 1 album(s)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "staged 1 album(s)" in out
+    # This is the actual fix under test: itemized, titled feedback matching
+    # wipe()'s style, not just a bare count.
+    assert f'#{album_id} "Feedback Album"' in out
 
     with insp.db.connection() as conn:
         album = conn.execute("SELECT is_staged FROM albums WHERE id=?", (album_id,)).fetchone()
@@ -275,7 +279,7 @@ def test_toggle_staging_unstage_album(insp):
     assert album["is_staged"] == 0
 
 
-def test_toggle_staging_assets_by_selection(insp):
+def test_toggle_staging_assets_by_selection(insp, capsys):
     album_id = _seed_album(insp.db, files=[
         {"href": "https://x/1", "title": "f1.mp4"},
         {"href": "https://x/2", "title": "f2.mp4"},
@@ -284,6 +288,9 @@ def test_toggle_staging_assets_by_selection(insp):
     asset_ids = [a["id"] for a in assets]
 
     insp.toggle_staging("asset", f"{asset_ids[0]}", state=1)
+    out = capsys.readouterr().out
+    assert f'#{asset_ids[0]} "f1.mp4"' in out
+    assert "f2.mp4" not in out  # only the actually-staged asset is listed
 
     with insp.db.connection() as conn:
         rows = conn.execute("SELECT id, is_staged FROM assets WHERE album_id=?", (album_id,)).fetchall()
@@ -295,6 +302,25 @@ def test_toggle_staging_assets_by_selection(insp):
 def test_toggle_staging_invalid_selection_shows_error_not_crash(insp, capsys):
     insp.toggle_staging("asset", "not_a_valid_selection", state=1)
     assert "Error:" in capsys.readouterr().out
+
+
+def test_toggle_staging_none_match_shows_message(insp, capsys):
+    """Mirrors wipe()'s equivalent test: an id that's genuinely in-range
+    (via an AUTOINCREMENT gap) but matches no real row should hit the
+    dedicated "none exist" message, not silently report "staged 0" or
+    crash. Same in-range-but-gapped setup as the wipe() version, for the
+    same reason — a fully out-of-range id would instead trip
+    parse_selection's own ValueError, a different code path.
+    """
+    _seed_album(insp.db, title="A", slug="staging-a")
+    gap_id = _seed_album(insp.db, title="B", slug="staging-b")
+    with insp.db.connection() as conn:
+        conn.execute("DELETE FROM albums WHERE id=?", (gap_id,))
+    _seed_album(insp.db, title="C", slug="staging-c")
+
+    insp.toggle_staging("album", str(gap_id), state=1)
+
+    assert "None of the requested album id(s) exist" in capsys.readouterr().out
 
 
 # ============================================================

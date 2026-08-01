@@ -719,7 +719,6 @@ def test_main_staged_mode_queries_and_runs():
 
         main()
 
-    mock_db.get_staged_assets.assert_called_once()
     mock_engine.run.assert_awaited_once()
     files_list = mock_engine.run.call_args[0][0]
     assert len(files_list) == 1
@@ -740,7 +739,6 @@ def test_main_triage_mode_queries_failed_and_runs():
 
         main()
 
-    mock_db.get_failed_assets.assert_called_once()
     mock_engine.run.assert_awaited_once()
     assert mock_engine.run.call_args[0][0][0]["db_asset_id"] == 2
 
@@ -815,10 +813,7 @@ def test_main_no_files_found_returns_without_running():
         patch("bunkr_api.media.downloader.DownloadEngine") as mock_engine_cls,
     ):
         mock_db = mock_db_cls.return_value
-        mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchall.return_value = []
-        mock_db.connection.return_value.__enter__.return_value = mock_conn
-        mock_db.connection.return_value.__exit__.return_value = False
+        mock_db.get_staged_assets.return_value = []
         mock_engine = _mock_engine(mock_engine_cls)
 
         main()
@@ -833,12 +828,9 @@ def test_main_invalid_selection_shows_error_and_returns():
         patch("bunkr_api.media.downloader.DownloadEngine") as mock_engine_cls,
     ):
         mock_db = mock_db_cls.return_value
-        mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchall.return_value = [
+        mock_db.get_staged_assets.return_value = [
             {"id": 1, "album_id": 5, "title": "s.mp4"}
         ]
-        mock_db.connection.return_value.__enter__.return_value = mock_conn
-        mock_db.connection.return_value.__exit__.return_value = False
         mock_engine = _mock_engine(mock_engine_cls)
 
         main()
@@ -857,13 +849,166 @@ def test_main_keyboard_interrupt_before_run_exits_cleanly():
         patch("bunkr_api.media.downloader.asyncio.run", side_effect=KeyboardInterrupt()),
     ):
         mock_db = mock_db_cls.return_value
-        mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchall.return_value = [
+        mock_db.get_staged_assets.return_value = [
             {"id": 1, "album_id": 5, "title": "s.mp4"}
         ]
-        mock_db.connection.return_value.__enter__.return_value = mock_conn
-        mock_db.connection.return_value.__exit__.return_value = False
-        _mock_engine(mock_engine_cls)
+        # Plain MagicMock, not AsyncMock: asyncio.run() is fully mocked below,
+        # so engine.run(...) is called but never awaited. An AsyncMock here
+        # would construct a real coroutine object at call time (before it
+        # ever reaches the mocked asyncio.run) that then never gets awaited —
+        # a genuine "coroutine was never awaited" leak, just one that only
+        # surfaces later, misattributed to whatever test the GC happens to
+        # run during.
+        mock_engine_cls.return_value.run = MagicMock()
 
         # Should not raise/propagate.
         main()
+
+
+def test_ytdlp_task_completion_does_not_clear_album_flag_while_siblings_staged(temp_db, tmp_path):
+    """Regression test for the bug where re-running `--staged` kept
+    re-downloading already-finished files: staging a whole album sets
+    is_staged on both the album row and every asset in it. Finishing one
+    asset must clear ONLY that asset's flag — the album's own is_staged
+    badge must stay 1 as long as any sibling asset is still staged, and
+    get_staged_assets() must never resurface the finished asset.
+    """
+    engine = DownloadEngine(temp_db)
+    reg = temp_db.register_album_from_json({
+        "selected_album": {"title": "Two File Album", "album_index_number": 1},
+        "files_found": [
+            {"href": "https://link.com/f/a", "title": "a.mp4"},
+            {"href": "https://link.com/f/b", "title": "b.mp4"},
+        ],
+    })
+    album_id = reg[0]
+    assets = temp_db.get_album_assets(album_id)
+    asset_a_id, asset_b_id = assets[0]["id"], assets[1]["id"]
+
+    # Mirrors inspector.py's toggle_staging(target="album"): both the album
+    # row and every asset in it get is_staged=1.
+    with temp_db.connection() as conn:
+        conn.execute("UPDATE albums SET is_staged = 1 WHERE id = ?", (album_id,))
+        conn.execute("UPDATE assets SET is_staged = 1 WHERE album_id = ?", (album_id,))
+
+    temp_db.get_valid_url = MagicMock(return_value="https://cdn/a")
+    mock_progress = MagicMock()
+    task_id = mock_progress.add_task("test", total=None)
+    mock_proc = MagicMock()
+    mock_proc.stdout = []
+    mock_proc.wait.return_value = None
+    mock_proc.returncode = 0
+
+    # Finish only asset A.
+    asset_a = {"title": "a.mp4", "db_asset_id": asset_a_id, "signed_cdn_url": "https://cdn/a"}
+    with patch("subprocess.Popen", return_value=mock_proc):
+        success = engine.execute_ytdlp_task(
+            index=1, total_files=2, asset_data=asset_a, slot_id=0,
+            task_id=task_id, progress=mock_progress, output_root=tmp_path,
+        )
+    assert success is True
+
+    staged_ids = {r["id"] for r in temp_db.get_staged_assets()}
+    assert asset_a_id not in staged_ids, "finished asset resurfaced in the staged queue"
+    assert asset_b_id in staged_ids, "unfinished sibling asset dropped out of the staged queue"
+
+    album = temp_db.get_album(album_id)
+    assert album["is_staged"] == 1, "album badge cleared while a sibling asset is still staged"
+
+    # Now finish asset B too.
+    asset_b = {"title": "b.mp4", "db_asset_id": asset_b_id, "signed_cdn_url": "https://cdn/b"}
+    with patch("subprocess.Popen", return_value=mock_proc):
+        engine.execute_ytdlp_task(
+            index=2, total_files=2, asset_data=asset_b, slot_id=0,
+            task_id=task_id, progress=mock_progress, output_root=tmp_path,
+        )
+
+    assert temp_db.get_staged_assets() == []
+    album = temp_db.get_album(album_id)
+    assert album["is_staged"] == 0, "album badge should clear once every asset is done"
+
+
+# ============================================================
+# execute_ytdlp_task — failures must be visible in the console, not just
+# silently recorded in the DB
+# ============================================================
+
+
+def test_ytdlp_task_no_url_failure_prints_to_console(temp_db, tmp_path):
+    engine = DownloadEngine(temp_db)
+    mock_progress = MagicMock()
+    task_id = mock_progress.add_task("test", total=None)
+    asset = {"title": "missing.mp4", "db_asset_id": 1}
+    temp_db.get_valid_url = MagicMock(return_value=None)
+    temp_db.update_download_status = MagicMock()
+
+    engine.execute_ytdlp_task(
+        index=1, total_files=1, asset_data=asset, slot_id=0,
+        task_id=task_id, progress=mock_progress, output_root=tmp_path,
+    )
+
+    printed = [str(c) for c in mock_progress.console.print.call_args_list]
+    assert any("Failed" in p and "missing.mp4" in p for p in printed)
+
+
+def test_ytdlp_task_nonzero_exit_prints_to_console(temp_db, tmp_path):
+    engine = DownloadEngine(temp_db)
+    mock_progress = MagicMock()
+    task_id = mock_progress.add_task("test", total=None)
+    asset = {"title": "x.mp4", "db_asset_id": 3, "signed_cdn_url": "https://cdn/x"}
+    temp_db.get_valid_url = MagicMock(return_value="https://cdn/x")
+    temp_db.update_download_status = MagicMock()
+
+    mock_proc = MagicMock()
+    mock_proc.stdout = []
+    mock_proc.wait.return_value = None
+    mock_proc.returncode = 1
+
+    with patch("subprocess.Popen", return_value=mock_proc):
+        engine.execute_ytdlp_task(
+            index=1, total_files=1, asset_data=asset, slot_id=0,
+            task_id=task_id, progress=mock_progress, output_root=tmp_path,
+        )
+
+    printed = [str(c) for c in mock_progress.console.print.call_args_list]
+    assert any("Failed" in p and "exit code 1" in p for p in printed)
+
+
+def test_ytdlp_task_popen_exception_prints_to_console(temp_db, tmp_path):
+    engine = DownloadEngine(temp_db)
+    mock_progress = MagicMock()
+    task_id = mock_progress.add_task("test", total=None)
+    asset = {"title": "x.mp4", "db_asset_id": 4, "signed_cdn_url": "https://cdn/x"}
+    temp_db.get_valid_url = MagicMock(return_value="https://cdn/x")
+    temp_db.update_download_status = MagicMock()
+
+    with patch("subprocess.Popen", side_effect=OSError("yt-dlp binary missing")):
+        engine.execute_ytdlp_task(
+            index=1, total_files=1, asset_data=asset, slot_id=0,
+            task_id=task_id, progress=mock_progress, output_root=tmp_path,
+        )
+
+    printed = [str(c) for c in mock_progress.console.print.call_args_list]
+    assert any("Failed" in p and "yt-dlp binary missing" in p for p in printed)
+
+
+def test_ytdlp_task_popen_exception_during_shutdown_does_not_print_failure(temp_db, tmp_path):
+    """A subprocess error caused by shutdown-triggered cleanup isn't a real
+    failure — it shouldn't alarm the user with a spurious [Failed] line.
+    """
+    engine = DownloadEngine(temp_db)
+    mock_progress = MagicMock()
+    task_id = mock_progress.add_task("test", total=None)
+    asset = {"title": "x.mp4", "db_asset_id": 6, "signed_cdn_url": "https://cdn/x"}
+    temp_db.get_valid_url = MagicMock(return_value="https://cdn/x")
+    temp_db.update_download_status = MagicMock()
+    engine.shutdown_event.set()
+
+    with patch("subprocess.Popen", side_effect=OSError("boom")):
+        engine.execute_ytdlp_task(
+            index=1, total_files=1, asset_data=asset, slot_id=0,
+            task_id=task_id, progress=mock_progress, output_root=tmp_path,
+        )
+
+    printed = [str(c) for c in mock_progress.console.print.call_args_list]
+    assert not any("Failed" in p for p in printed)

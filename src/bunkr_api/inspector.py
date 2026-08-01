@@ -196,7 +196,7 @@ class Inspector:
             """).fetchall()
 
             if staged_albums:
-                t = Table(title="[dim magenta]Staged Albums (album-level flag)[/dim magenta]", expand=True, style="dim")
+                t = Table(title="[magenta]Staged Albums (album-level flag)[/magenta]", expand=True, style="dim")
                 t.add_column("ID", justify="right", style="cyan")
                 t.add_column("Title")
                 t.add_column("Files", justify="right")
@@ -207,7 +207,7 @@ class Inspector:
                 console.print("[dim]No albums flagged staged at the album level.[/dim]")
 
             if staged_by_album:
-                t = Table(title="[dim magenta]Staged Assets by Album[/dim magenta]", expand=True, style="dim")
+                t = Table(title="[magenta]Staged Assets by Album[/magenta]", expand=True, style="dim")
                 t.add_column("Album")
                 t.add_column("Staged Files", justify="right", style="cyan")
                 t.add_column("Completed", justify="right", style="green")
@@ -277,17 +277,30 @@ class Inspector:
                 ids = parse_selection(selection, total_items=total_rows)
 
                 placeholders = ",".join("?" for _ in ids)
+                found_rows = conn.execute(
+                    f"SELECT id, title FROM {table} WHERE id IN ({placeholders})", ids
+                ).fetchall()
+
+                if not found_rows:
+                    console.print(f"[yellow]None of the requested {target} id(s) exist: {ids}[/yellow]")
+                    return
+
+                found = [r["id"] for r in found_rows]
+                labels = [f"#{r['id']} \"{r['title']}\"" for r in found_rows]
+                found_placeholders = ",".join("?" for _ in found)
 
                 if target == "album":
-                    cursor = conn.execute(f"UPDATE albums SET is_staged=? WHERE id IN ({placeholders})", [state, *ids])
-                    conn.execute(f"UPDATE assets SET is_staged=? WHERE album_id IN ({placeholders})", [state, *ids])
+                    cursor = conn.execute(f"UPDATE albums SET is_staged=? WHERE id IN ({found_placeholders})", [state, *found])
+                    conn.execute(f"UPDATE assets SET is_staged=? WHERE album_id IN ({found_placeholders})", [state, *found])
                 else:
-                    cursor = conn.execute(f"UPDATE assets SET is_staged=? WHERE id IN ({placeholders})", [state, *ids])
+                    cursor = conn.execute(f"UPDATE assets SET is_staged=? WHERE id IN ({found_placeholders})", [state, *found])
 
                 conn.commit()
                 verb = "staged" if state else "unstaged"
-                
-                console.print(f"[green]Successfully {verb} {cursor.rowcount} {target}(s).[/green]")
+
+                console.print(f"[green]Successfully {verb} {cursor.rowcount} {target}(s):[/green]")
+                for label in labels:
+                    console.print(f"  [dim]-[/dim] {label}")
             except (sqlite3.Error, ValueError, TypeError) as e:
                 console.print(f"[red]Error: {e}[/red]")
 
@@ -327,8 +340,9 @@ class Inspector:
                     conn.execute(f"DELETE FROM assets WHERE album_id IN ({placeholders})", found)
                     cursor = conn.execute(f"DELETE FROM albums WHERE id IN ({placeholders})", found)
                     conn.commit()
-                    # cursor.rowcount here, not len(ids) — same reporting-
-                    # accuracy issue as toggle_staging otherwise.
+                    # cursor.rowcount reflects only rows actually found above,
+                    # not the raw (possibly-partially-invalid) selection —
+                    # toggle_staging now follows this same pattern too.
                     console.print(f"[green]Deleted {cursor.rowcount} album(s):[/green]")
                     for label in labels:
                         console.print(f"  [dim]-[/dim] {label}")

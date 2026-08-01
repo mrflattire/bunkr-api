@@ -53,6 +53,7 @@ class DownloadEngine:
             cdn_url = None
 
         if not cdn_url:
+            progress.console.print(f"[red][-][/red] Failed: {title} — no valid URL.")
             if db_id: self.db.update_download_status(db_id, "FAILED", error="No URL")
             return False
 
@@ -114,14 +115,21 @@ class DownloadEngine:
                     self.db.update_download_status(db_id, "COMPLETED", str(dest))
                     with self.db.connection() as conn:
                         conn.execute("UPDATE assets SET is_staged = 0 WHERE id = ?;", (db_id,))
+                        row = conn.execute(
+                            "SELECT album_id FROM assets WHERE id = ?;", (db_id,)
+                        ).fetchone()
+                    if row:
+                        self.db.sync_album_staged_flag(row["album_id"])
                 return True
             else:
+                progress.console.print(f"[red][-][/red] Failed: {title} — yt-dlp exit code {proc.returncode}.")
                 if db_id: self.db.update_download_status(db_id, "FAILED", error=f"Exit code {proc.returncode}")
                 return False
                 
         except Exception as e:
-            if not self.shutdown_event.is_set() and db_id:
-                self.db.update_download_status(db_id, "FAILED", error=str(e))
+            if not self.shutdown_event.is_set():
+                progress.console.print(f"[red][-][/red] Failed: {title} — {e}")
+                if db_id: self.db.update_download_status(db_id, "FAILED", error=str(e))
             return False
         finally:
             with self.active_processes_lock:
