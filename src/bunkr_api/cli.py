@@ -51,7 +51,7 @@ def show_interactive_options(album_id, page_assets, start_idx, total_pages, curr
     minter_style = " [bold red blink]5. Mint new tokens (⚠️ EXPIRED)[/bold red blink]" if has_expired_tokens else " [bold white]5.[/bold white] Mint new tokens"
 
     console.print("\n[bold cyan][交互 Engine] Select an Action Context:[/bold cyan]")
-    console.print(f" Navigation -> [bold white]n[/bold white]: Next Page | [bold white]p[/bold white]: Prev Page")
+    console.print(" Navigation -> [bold white]n[/bold white]: Next Page | [bold white]p[/bold white]: Prev Page")
     console.print(" [bold white]1.[/bold white] Stream target(s) [dim](Accepts: 5 | 3,7,12 | 1-5 | staged | Enter for ALL)[/dim]")
     console.print(" [bold white]2.[/bold white] Download target(s) [dim](Accepts: 5 | 3,7,12 | 1-10 | staged)[/dim]")
     console.print(" [bold white]3.[/bold white] Download ALL assets in this album")
@@ -372,12 +372,12 @@ async def main_loop():
         processed_path = clean_dragged_path(raw)
         if processed_path.lower().endswith('.json') and os.path.exists(processed_path):
             try:
-                with open(processed_path, 'r', encoding='utf-8') as f:
+                with open(processed_path, encoding='utf-8') as f:
                     data = json.load(f)
                 new_id, _new_count, _updated_count = db.register_album_from_json(data)
                 await show_album_details(new_id)
                 continue
-            except Exception as e: # noqa: BLE001 
+            except Exception as e:
                 console.print(f"[red][!] JSON import failed: {e}[/red]")
                 continue
 
@@ -409,7 +409,7 @@ async def main_loop():
                     console.print("[bold green][+][/bold green] Deleted:")
                     for label in labels:
                         console.print(f"  [dim]-[/dim] {label}")
-            except Exception as e: # noqa: BLE001 
+            except Exception as e:
                 console.print(f"[red][!] Deletion failed: {e}[/red]")
             continue
 
@@ -470,12 +470,12 @@ Master Help - Related Binaries:
         processed = clean_dragged_path(target_path)
         if os.path.exists(processed):
             try:
-                with open(processed, 'r', encoding='utf-8') as f:
+                with open(processed, encoding='utf-8') as f:
                     data = json.load(f)
                 new_id, _new_count, _updated_count = db.register_album_from_json(data)
                 await show_album_details(new_id)
                 return
-            except Exception as e: # noqa: BLE001 
+            except Exception as e:
                 console.print(f"[bold red][!] Import failed: {e}[/bold red]")
                 sys.exit(1)
 

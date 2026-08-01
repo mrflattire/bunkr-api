@@ -6,6 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "bunkr-api"
 version = "0.1.0-beta.1"
 description = "Interactive Python API wrapper for Bunkr"
+readme = "README.md"
+license="MIT"
+authors = [
+    { name = "mrflattire", email = "mrflattirex@gmail.com" }
+]
 
 requires-python = ">=3.12"
 
@@ -78,8 +83,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"src/bunkr_api/cli.py" = ["ALL"]
+#"src/bunkr_api/cli.py" = ["ALL"]
 "tests/**/*.py" = ["S101"] # Assert used in pytest liberally
+"legacy_scripts/*.py" =["ALL"] # They were written before modulirization
+"scratch/**/*.py" = ["ALL"] # Written during recon phase
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

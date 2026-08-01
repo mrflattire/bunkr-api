@@ -22,7 +22,7 @@ Search, catalog, download, and stream media with a high-performance interactive 
 
 ## ✨ Features
 
-* **Interactive Dashboard**: A full-featured terminal hub to manage your catalog, staged items, and downloads.
+* **Interactive Dashboard**: A full-featured terminal hub to manage your catalog, staged files, and downloads.
 * **Deep Resolution**: Automatically extracts raw asset IDs from `window.albumFiles` JavaScript arrays.
 * **High-Speed Downloads**: Parallel multi-worker queue powered by the industry-standard `yt-dlp` engine.
 * **Direct Streaming**: Play content instantly via `mpv` or `vlc` with temporary playlist (M3U) generation.
@@ -30,6 +30,8 @@ Search, catalog, download, and stream media with a high-performance interactive 
 * **Developer Friendly**: Clean Python API (`BunkrAPI`) for integration into third-party scripts.
 
 ## 📦 Installation
+
+> **Note:** `bunkr-api` isn't published to PyPI yet (still `0.1.0-beta.1`), so the `pip install` / `uv tool install` commands below aren't live yet. For now, use **From Source (Editable)** , it's fully functional and is how this project is actually developed and tested today.
 
 ### CLI (Recommended)
 
@@ -55,6 +57,35 @@ To stream content directly, ensure one of the following is installed on your sys
 
 * **[MPV](https://mpv.io/)** (Recommended for status syncing)
 * **[VLC](https://www.videolan.org/vlc/)**
+
+<details>
+<summary>Linux</summary>
+
+```sh
+# Ubuntu/Debian
+sudo apt install mpv
+
+# Fedora/RHEL
+sudo dnf install mpv
+
+# Arch Linux
+sudo pacman -S mpv
+```
+</details>
+
+<details>
+<summary>macOS</summary>
+
+```sh
+brew install mpv
+```
+</details>
+
+<details>
+<summary>Windows</summary>
+
+Download from [mpv.io/installation](https://mpv.io/installation/).
+</details>
 
 ---
 
@@ -113,7 +144,7 @@ asyncio.run(main())
 <details open>
 <summary><h3>Main Dashboard Interface (`bunkr-api`)</h3></summary>
 
-The primary entry point of the toolkit. It serves as an interactive hub for managing your entire media catalog. It is designed to intelligently handle inputs—whether you want to browse your collection, jump to a specific record, or import metadata files.
+The primary entry point of the toolkit. It serves as an interactive hub for managing your entire media catalog. It is designed to intelligently handle inputs—whether you want to browse your collection, jump to a specific album, or import json metadata files.
 
 ```sh
 bunkr-api [OPTIONS] [PATH/ID]
@@ -136,7 +167,7 @@ bunkr-api -i ./album_metadata.json
 bunkr-api "./path/to/metadata.json"
 
 # Perform a quick search and resolution directly from the launch command
-bunkr-api "Natalie Roush" --mode strict --per 40
+bunkr-api "Natalie Roush" --mode broad --per 40
 ```
 
 **Main Catalog Commands:**
@@ -261,7 +292,7 @@ bunkr-stream --staged
 > **Note on MPV**: When using MPV, `bunkr-api` opens a JSON IPC server. This allows the terminal to show you exactly which track is playing, the current timestamp, and the buffer/cache duration in real-time.
 
 ### Why this standalone command is useful:
-1. **Low Latency**: It bypasses the Main Menu logic, allowing you to start music or video playback in one command.
+1. **Low Latency**: It bypasses the Main Menu logic, allowing you to start video playback in one command.
 2. **Headless Maintenance**: If you know an album ID, you can start a stream without ever seeing the catalog list.
 3. **Staging Workflow**: You can spend time "Staging" items via `bunkr-api` or `bunkr-inspect`, and then later just run `bunkr-stream --staged` to play your curated queue.
 
@@ -272,7 +303,7 @@ bunkr-stream --staged
 <details>
 <summary><h3>Standalone Scraper (`bunkr-scrape`)</h3></summary>
 
-A deep-resolution engine designed to discover albums, extract asset metadata, and synchronize findings with your local database. It utilizes TLS impersonation to bypass standard bot detection and provides real-time feedback during the resolution process.
+A deep-resolution engine designed to discover albums, extract asset metadata, and synchronize findings with your local database. Bypasses detection and provides real-time feedback during the resolution process.
 
 ```sh
 bunkr-scrape [QUERY] [OPTIONS]
@@ -306,7 +337,7 @@ bunkr-scrape "CreatorName" --save-json --output "C:/Backups/Bunkr_Metadata"
 | `--save-json` | Export the resolved album metadata to a `.json` file. |
 | `-o, --output` | Override the default directory for JSON exports. |
 
-> **Deep Resolution Intelligence**: Unlike basic scrapers, `bunkr-scrape` performs a "Step 2" resolution. It navigates into your selected album, parses the internal JavaScript state (`window.albumFiles`), and extracts the **True IDs** required for streaming and downloading.
+> **Deep Resolution Intelligence**: Unlike basic scrapers, `bunkr-scrape` performs a deep resolution. It navigates into your selected album, parses the internal JavaScript state, and extracts the **True IDs** required for streaming and downloading.
 
 ### Why this standalone command is useful:
 1.  **Direct Cataloging**: It is the primary way to "feed" your database. Any album resolved here becomes immediately available in `bunkr-api`, `bunkr-download`, and `bunkr-stream`.
@@ -389,7 +420,7 @@ Used to flag items for batch actions in `bunkr-download` or `bunkr-stream`.
 <details>
 <summary><h3>Token Maintenance (`bunkr-mint`)</h3></summary>
 
-A dedicated maintenance utility designed to keep your media library "hot." Because Bunkr CDN links use time-limited expiration (`ex`) timestamps, they eventually stop working. `bunkr-mint` automates the process of fetching fresh signatures using the stored **True IDs** in your database.
+A dedicated maintenance utility designed to keep your media library "hot." Because Bunkr CDN links use 2-hour time-limited expiration (`ex`) timestamps, they eventually stop working. `bunkr-mint` automates the process of fetching fresh signatures using the stored **True IDs** in your database.
 
 ```sh
 bunkr-mint [OPTIONS]
@@ -432,16 +463,196 @@ While the main `bunkr-api` dashboard triggers an automated "Escape Hatch" refres
 
 ---
 
+<details>
+<summary><h3>Python API (`BunkrAPI`)</h3></summary>
+
+Everything the CLI tools do is also available as a plain Python library, so you can script your own workflows — cron jobs, batch imports, custom dashboards — without touching the terminal UI at all. `BunkrAPI` is a single facade class wrapping the scraper, downloader, player, and database.
+
+```python
+from bunkr_api import BunkrAPI
+
+api = BunkrAPI()  # uses the same ~/.bunkr_api/media_tracker.db as the CLI tools
+```
+
+> **Async by design**: nearly every method that touches the network, disk, or a subprocess is `async def` including `download_album`, which internally spawns a real worker pool via `loop.run_in_executor()` rather than blocking. This means you can safely `await` these from inside your own event loop (e.g. a web server request handler) without deadlocking. The only fully synchronous methods are the pure catalog lookups (`get_albums`, `get_album`, `get_assets`, `get_valid_url`) and `delete_album`. If you're writing a simple standalone script (not already inside an event loop), wrap your entry point in `asyncio.run(...)` as shown in every example below.
+
+**Full Method Reference:**
+
+#### Catalog & Retrieval *(sync)*
+| Method | Description |
+| :--- | :--- |
+| `get_albums()` | Returns every cataloged album as a list of dicts. |
+| `get_album(album_id)` | Returns a single album's metadata, or `None` if it doesn't exist. |
+| `get_assets(album_id)` | Returns every asset belonging to an album. |
+| `get_valid_url(asset_id)` | Returns a fresh, valid signed CDN URL for one asset, re-minting automatically if the cached token is missing or expiring soon. |
+
+#### Scraping & Resolution *(async)*
+| Method | Description |
+| :--- | :--- |
+| `search(term, mode="broad", per=20, sort="latest")` | Programmatic search. Returns a list of album dicts (`title`, `url`, `file_count`). |
+| `resolve_album(url, search_context="API_User", save_json=False)` | Scrapes and registers a bunkr album URL. Returns the new database ID. |
+| `resolve_and_download(url, workers=3, output_dir=..., save_json=False)` | One-shot convenience: `resolve_album()` immediately followed by `download_album()`. Returns the database ID. |
+
+#### Media Execution *(async)*
+| Method | Description |
+| :--- | :--- |
+| `download_album(album_id, workers=3, output_dir=...)` | Multi-threaded download for a whole album. Raises `ValueError` if the album doesn't exist. |
+| `download_staged(workers=3, output_dir=...)` | Downloads everything currently flagged as staged (see `bunkr-inspect stage` or the dashboard's `6` action). A no-op if nothing is staged. |
+| `retry_failed(workers=3, output_dir=...)` | Retries every asset currently marked `FAILED`. A no-op if nothing has failed. |
+| `stream_album(album_id, indices_spec="all", player="mpv")` | Resolves tokens and launches `mpv`/`vlc` for the given selection. Raises `ValueError` if the album has no assets. |
+
+#### Maintenance
+| Method | Description |
+| :--- | :--- |
+| `refresh_tokens(album_id=None)` *(async)* | Refreshes any expiring CDN tokens — scoped to one album, or the whole database if omitted. Always a single pass; never blocks forever. |
+| `delete_album(album_id)` *(sync)* | Deletes an album and all its assets (cascades at the database level). Returns `True` if something was actually deleted. |
+
+---
+
+**Example — the classic three-step flow:**
+
+```python
+import asyncio
+from bunkr_api import BunkrAPI
+
+async def main():
+    api = BunkrAPI()
+
+    results = await api.search("Natalie Roush")
+    if results:
+        album_id = await api.resolve_album(results[0]["url"])
+        print(f"Album registered with ID: {album_id}")
+        await api.download_album(album_id, workers=3)
+
+asyncio.run(main())
+```
+
+**Example — the same flow, collapsed into one call:**
+
+```python
+import asyncio
+from bunkr_api import BunkrAPI
+
+async def main():
+    api = BunkrAPI()
+    results = await api.search("Natalie Roush")
+    if results:
+        album_id = await api.resolve_and_download(results[0]["url"], workers=5)
+        print(f"Resolved and downloaded album {album_id}")
+
+asyncio.run(main())
+```
+
+**Example — browsing your existing catalog without touching the network:**
+
+```python
+from bunkr_api import BunkrAPI
+
+api = BunkrAPI()
+
+for album in api.get_albums():
+    print(f"#{album['id']} — {album['title']} ({album['file_count']} files)")
+
+# Drill into one album
+album = api.get_album(5)
+if album:
+    for asset in api.get_assets(5):
+        print(f"  {asset['title']} — {asset['download_status']}")
+        # Get a guaranteed-fresh link, even if the cached token expired
+        print(f"  -> {api.get_valid_url(asset['id'])}")
+```
+
+**Example — streaming programmatically:**
+
+```python
+import asyncio
+from bunkr_api import BunkrAPI
+
+async def main():
+    api = BunkrAPI()
+    # Stream tracks 1, 3, and 5-8 from album 17 in VLC instead of the MPV default
+    await api.stream_album(17, indices_spec="1,3,5-8", player="vlc")
+
+asyncio.run(main())
+```
+
+**Example — maintenance batch jobs (great for a nightly cron script):**
+
+```python
+import asyncio
+from bunkr_api import BunkrAPI
+
+async def nightly_maintenance():
+    api = BunkrAPI()
+
+    # Keep every token in the database fresh
+    await api.refresh_tokens()
+
+    # Pick up anything you staged earlier via `bunkr-inspect stage` or the dashboard
+    await api.download_staged(workers=4)
+
+    # Give yesterday's network blips another chance
+    await api.retry_failed(workers=4)
+
+asyncio.run(nightly_maintenance())
+```
+
+**Example — resolving several albums concurrently with `asyncio.gather`:**
+
+```python
+import asyncio
+from bunkr_api import BunkrAPI
+
+async def main():
+    api = BunkrAPI()
+    urls = [
+        "https://bunkr.cr/a/first-album",
+        "https://bunkr.cr/a/second-album",
+        "https://bunkr.cr/a/third-album",
+    ]
+
+    # resolve_album() itself is I/O-bound (network), so gathering several
+    # at once is a genuine speedup, not just cosmetic concurrency.
+    album_ids = await asyncio.gather(*(api.resolve_album(u) for u in urls))
+    print(f"Registered {len(album_ids)} albums: {album_ids}")
+
+    # Then download them all, one at a time (download_album already
+    # parallelizes its own worker pool internally via `workers=`)
+    for album_id in album_ids:
+        await api.download_album(album_id, workers=5)
+
+asyncio.run(main())
+```
+
+**Example — cleaning up an album you no longer want:**
+
+```python
+from bunkr_api import BunkrAPI
+
+api = BunkrAPI()
+was_deleted = api.delete_album(5)
+print(f"Album 5 removed: {was_deleted}")  # False if it never existed
+```
+
+### Why the Python API is useful:
+1.  **No CLI required for automation**: cron jobs, scheduled maintenance, or a custom Discord bot can all drive the same database the interactive tools use, with zero terminal interaction.
+2.  **Composable**: every method returns plain dicts/lists/ints/bools — no custom objects to learn — so it's trivial to slot into an existing script, web framework, or notebook.
+3.  **Safe to embed**: because the network/disk/subprocess methods are genuinely async (not just decorated), you can call them from inside your own already-running event loop — a FastAPI route handler, a Discord.py command, a Jupyter cell — without the classic "asyncio.run() cannot be called from a running event loop" crash.
+
+</details>
+
+---
+
 ## 📂 Configuration & Data
 
 The application stores all data in a hidden directory in your user profile to ensure persistence:
 
 *   **SQLite Database**: `~/.bunkr_api/media_tracker.db`
 *   **Logs**: `~/.bunkr_api/logs/`
-*   **Default JSON Exports**: `~/.bunkr_api/exports/`
 *   **Default Downloads**: `~/Downloads/bunkr_downloads/`
+*   **Default JSON Exports**: `~/Downloads/bunkr_downloads/jsons/` — used by both `bunkr-api --save-json` and `bunkr-scrape --save-json` when `-o/--output` isn't given.
 
-> **Pro Tip**: You can override the download directory globally by setting the `BUNKR_DOWNLOAD_DIR` environment variable.
+> **Pro Tip**: Every command that writes files (`bunkr-scrape --save-json`, `bunkr-download`, etc.) accepts an `-o/--output` flag to override its destination for that run.
 
 ---
 
