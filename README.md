@@ -5,7 +5,7 @@
 **Modular Python toolkit and API wrapper for Bunkr-style media architectures**  
 Search, catalog, download, and stream media with a high-performance interactive terminal UI.
 
-[![Version](https://img.shields.io/badge/version-0.1.0--beta.1-orange)](https://github.com/youruser/bunkr-api)
+[![Version](https://img.shields.io/badge/version-0.1.0--beta.1-orange)](https://github.com/mrflattire/bunkr-api)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -46,7 +46,7 @@ pip install bunkr-api
 ### From Source (Editable)
 
 ```sh
-git clone https://github.com/youruser/bunkr-api.git
+git clone https://github.com/mrflattire/bunkr-api.git
 cd bunkr-api
 pip install -e .
 ```
