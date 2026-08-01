@@ -1,0 +1,4 @@
+prune tests
+prune legacy_scripts
+prune scratch
+prune htmlcov

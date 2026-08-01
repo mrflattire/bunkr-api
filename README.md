@@ -33,7 +33,7 @@ Search, catalog, download, and stream media with a high-performance interactive 
 
 ## 📦 Installation
 
-> **Note:** `bunkr-api` isn't published to PyPI yet (still `0.1.0-beta.1`), so the `pip install` / `uv tool install` commands below aren't live yet. For now, use **From Source (Editable)** , it's fully functional and is how this project is actually developed and tested today.
+> **Note:** `bunkr-api` is published to PyPI (still `0.1.0-beta.1`), so the `pip install` / `uv tool install` commands are now live.
 
 ### CLI (Recommended)
 

@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 .ruff_cache/
 
+# Distribution folders
+dist/
+build/
+
 # Ignore virtual environments (if you use them)
 venv/
 .venv/
