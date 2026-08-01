@@ -9,7 +9,7 @@ Search, catalog, download, and stream media with a high-performance interactive 
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[Features](#features) • [Installation](#installation) • [Quick Start](#quick-start) • [Usage](#DetailedUsage&AdvancedWorkflows)
+[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Usage](#-detailed-usage--advanced-workflows)
 
 </div>
 
@@ -33,8 +33,6 @@ Search, catalog, download, and stream media with a high-performance interactive 
 
 ## 📦 Installation
 
-> **Note:** `bunkr-api` is published to PyPI (still `0.1.0-beta.1`), so the `pip install` / `uv tool install` commands are now live.
-
 ### CLI (Recommended)
 
 ```sh
@@ -44,6 +42,12 @@ uv tool install bunkr-api
 # Using pip
 pip install bunkr-api
 ```
+
+> **Windows users:** `uv tool install` places executables in `%USERPROFILE%\.local\bin`, which is **not** on `PATH` by default on Windows (unlike most Linux/macOS setups). If `bunkr-api`, `bunkr-download`, etc. aren't recognized after install, run:
+> ```powershell
+> uv tool update-shell
+> ```
+> then restart your terminal. Alternatively, for just the current session: `$env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"`.
 
 ### From Source (Editable)
 
