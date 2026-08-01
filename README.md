@@ -9,6 +9,8 @@ Search, catalog, download, and stream media with a high-performance interactive 
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+[Features](#features) • [Installation](#installation) • [Quick Start](#quick-start) • [Usage](#DetailedUsage&AdvancedWorkflows)
+
 </div>
 
 ## 🚀 Version Status
