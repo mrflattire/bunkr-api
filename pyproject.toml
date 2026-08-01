@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bunkr-api"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 description = "Interactive Python API wrapper for Bunkr"
 readme = "README.md"
 license="MIT"
