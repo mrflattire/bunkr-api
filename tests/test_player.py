@@ -428,6 +428,40 @@ def test_poll_mpv_status_gives_up_after_retries_if_connection_never_succeeds(tem
 # ============================================================
 
 
+def test_prompt_for_inputs_shows_completed_badge_for_fully_downloaded_album(temp_db):
+    finished_id, _, _ = temp_db.register_album_from_json({
+        "selected_album": {"title": "Finished Album", "album_index_number": 1},
+        "files_found": [{"href": "https://x/1", "title": "a.mp4"}],
+    })
+    for a in temp_db.get_album_assets(finished_id):
+        temp_db.update_download_status(a["id"], "COMPLETED", "/tmp/out.mp4")  # noqa: S108
+
+    partial_id, _, _ = temp_db.register_album_from_json({
+        "selected_album": {"title": "Partial Album", "album_index_number": 2},
+        "files_found": [
+            {"href": "https://y/1", "title": "b.mp4"},
+            {"href": "https://y/2", "title": "c.mp4"},
+        ],
+    })
+    partial_assets = temp_db.get_album_assets(partial_id)
+    temp_db.update_download_status(partial_assets[0]["id"], "COMPLETED", "/tmp/out2.mp4")  # noqa: S108
+
+    printed = []
+    with (
+        patch("bunkr_api.media.player.console.print", side_effect=lambda *a, **k: printed.extend(a)),
+        patch("bunkr_api.media.player.Prompt.ask", return_value="q"),
+        pytest.raises(SystemExit),
+    ):
+        prompt_for_inputs(temp_db)
+
+    lines = [str(p) for p in printed]
+    finished_line = next(line for line in lines if "Finished Album" in line)
+    partial_line = next(line for line in lines if "Partial Album" in line)
+
+    assert "[COMPLETED]" in finished_line
+    assert "[COMPLETED]" not in partial_line
+
+
 def test_prompt_for_inputs_quit_exits(temp_db):
     temp_db.get_all_albums = MagicMock(return_value=[])
     with (
@@ -492,9 +526,54 @@ def test_prompt_for_inputs_valid_json_path(temp_db, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_player_logic_staged_flow_excludes_completed_album_staged_asset(temp_db):
+    """Regression test: db.get_staged_assets() (not raw duplicated SQL) is
+    used here, so a completed asset whose *album* is still flagged staged
+    must not resurface in the --staged playback queue.
+    """
+    album_id, _, _ = temp_db.register_album_from_json({
+        "selected_album": {"title": "Two File Album", "album_index_number": 1},
+        "files_found": [
+            {"href": "https://link.com/f/a", "title": "a.mp4"},
+            {"href": "https://link.com/f/b", "title": "b.mp4"},
+        ],
+    })
+    assets = temp_db.get_album_assets(album_id)
+    asset_a_id, _asset_b_id = assets[0]["id"], assets[1]["id"]
+
+    # Mirrors inspector.py's toggle_staging(target="album"): both the album
+    # row and every asset in it get is_staged=1.
+    with temp_db.connection() as conn:
+        conn.execute("UPDATE albums SET is_staged = 1 WHERE id = ?", (album_id,))
+        conn.execute("UPDATE assets SET is_staged = 1 WHERE album_id = ?", (album_id,))
+
+    # Asset A finishes downloading; only its own flag clears (album flag
+    # stays 1, matching real downloader.py behavior before album-sync runs).
+    with temp_db.connection() as conn:
+        conn.execute("UPDATE assets SET is_staged = 0 WHERE id = ?", (asset_a_id,))
+    temp_db.update_download_status(asset_a_id, "COMPLETED", "/tmp/a.mp4")  # noqa: S108
+    temp_db.get_valid_url = MagicMock(side_effect=lambda aid: f"https://resolved/{aid}")
+
+    with (
+        patch("bunkr_api.core.db.DatabaseManager", return_value=temp_db),
+        patch(
+            "bunkr_api.media.player.PlayerEngine.resolve_tokens_async", new_callable=AsyncMock
+        ),
+        patch("bunkr_api.media.player.PlayerEngine.play_mpv", new_callable=AsyncMock) as mock_play,
+    ):
+        await run_player_logic(args_staged=True)
+
+    mock_play.assert_awaited_once()
+    queue = mock_play.call_args[0][0]
+    titles = [title for _idx, title, _url in queue]
+    assert titles == ["b.mp4"], (
+        "the completed asset (a.mp4) resurfaced via the stale album-level staged flag"
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_player_logic_staged_flow(temp_db):
     mock_db = MagicMock()
-    mock_conn = MagicMock()
     fake_row = {
         "id": 1,
         "title": "Song",
@@ -503,9 +582,7 @@ async def test_run_player_logic_staged_flow(temp_db):
         "token_expiry_timestamp": None,
         "true_file_id": 99,
     }
-    mock_conn.execute.return_value.fetchall.return_value = [fake_row]
-    mock_db.connection.return_value.__enter__.return_value = mock_conn
-    mock_db.connection.return_value.__exit__.return_value = False
+    mock_db.get_staged_assets.return_value = [fake_row]
     mock_db.get_valid_url.return_value = "http://resolved"
 
     with (

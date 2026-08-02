@@ -635,6 +635,39 @@ def test_prompt_for_inputs_triage_keyword_returns_triage_flags(temp_db):
     assert triage is True
 
 
+def test_prompt_for_inputs_shows_completed_badge_for_fully_downloaded_album(temp_db):
+    finished_id, _, _ = temp_db.register_album_from_json({
+        "selected_album": {"title": "Finished Album", "album_index_number": 1},
+        "files_found": [{"href": "https://x/1", "title": "a.mp4"}],
+    })
+    for a in temp_db.get_album_assets(finished_id):
+        temp_db.update_download_status(a["id"], "COMPLETED", "/tmp/out.mp4")  # noqa: S108
+
+    partial_id, _, _ = temp_db.register_album_from_json({
+        "selected_album": {"title": "Partial Album", "album_index_number": 2},
+        "files_found": [
+            {"href": "https://y/1", "title": "b.mp4"},
+            {"href": "https://y/2", "title": "c.mp4"},
+        ],
+    })
+    partial_assets = temp_db.get_album_assets(partial_id)
+    temp_db.update_download_status(partial_assets[0]["id"], "COMPLETED", "/tmp/out2.mp4")  # noqa: S108
+
+    printed = []
+    with patch(
+        "bunkr_api.media.downloader.console.print",
+        side_effect=lambda *a, **k: printed.extend(a),
+    ), patch("bunkr_api.media.downloader.Prompt.ask", return_value="q"), pytest.raises(SystemExit):
+        prompt_for_inputs(temp_db)
+
+    lines = [str(p) for p in printed]
+    finished_line = next(line for line in lines if "Finished Album" in line)
+    partial_line = next(line for line in lines if "Partial Album" in line)
+
+    assert "[COMPLETED]" in finished_line
+    assert "[COMPLETED]" not in partial_line
+
+
 def test_prompt_for_inputs_numeric_selection_resolves_cataloged_album(temp_db):
     temp_db.register_album_from_json({
         "selected_album": {"title": "Test Album", "album_index_number": 1},
