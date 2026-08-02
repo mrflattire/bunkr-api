@@ -41,6 +41,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.0",
+    "setuptools<82",
 ]
 
 [tool.pytest.ini_options]

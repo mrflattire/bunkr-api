@@ -28,10 +28,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests with coverage
-        run: uv run coverage run -m pytest
-
-      - name: Coverage report
-        run: uv run coverage report -m
+        run: uv run pytest
 
       - name: Generate coverage badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
