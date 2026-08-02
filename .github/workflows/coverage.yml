@@ -55,8 +55,8 @@ jobs:
       - name: Commit badge data
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify-changed-files.outputs.files_changed == 'true'
         run: |
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "coverage-badge-bot"
+          git config --local user.email "coverage-badge-bot@users.noreply.github.com"
           git add coverage-badge.json
           git commit -m "chore: update coverage badge data"
           git push
