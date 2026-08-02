@@ -1,4 +1,3 @@
-# src/bunkr_api/media/downloader.py
 import asyncio
 import json
 import os
@@ -278,7 +277,10 @@ def prompt_for_inputs(db):
         for idx, album in enumerate(db_albums, start=1):
             album_dict = dict(album)
             staged_flag = " [bold green][STAGED][/bold green]" if album_dict.get('is_staged') == 1 else ""
-            console.print(f"  [cyan]{idx:2d}[/cyan] • [yellow]{album_dict['title']}[/yellow] ({album_dict['file_count']} items){staged_flag} [dim](DB ID: {album_dict['id']})[/dim]")
+            total_assets = album_dict.get('total_assets') or 0
+            completed_assets = album_dict.get('completed_assets') or 0
+            completed_flag = " [bold blue][COMPLETED][/bold blue]" if total_assets > 0 and completed_assets == total_assets else ""
+            console.print(f"  [cyan]{idx:2d}[/cyan] • [yellow]{album_dict['title']}[/yellow] ({album_dict['file_count']} items){staged_flag}{completed_flag} [dim](DB ID: {album_dict['id']})[/dim]")
         console.print()
 
     console.print("[dim]Special keywords: 'staged' (all staged) | 'triage' (failed items)[/dim]")
