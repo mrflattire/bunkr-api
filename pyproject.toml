@@ -36,12 +36,10 @@ where = ["src"]
 [dependency-groups]
 dev = [
     "coverage>=7.15.2",
-    "coverage-badge>=1.1.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.0",
-    "setuptools<82",
 ]
 
 [tool.pytest.ini_options]

@@ -1,4 +1,4 @@
-name: CI
+name: Coverage
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  lint-test-coverage:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -30,22 +30,33 @@ jobs:
       - name: Run tests with coverage
         run: uv run pytest
 
-      - name: Generate coverage badge
+      - name: Generate coverage badge JSON
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: uv run coverage-badge -o coverage.svg -f
+        run: |
+          uv run coverage json -o coverage.json
+          uv run python -c "
+          import json
+          with open('coverage.json') as f:
+              data = json.load(f)
+          pct = round(data['totals']['percent_covered'])
+          badge = {'schemaVersion': 1, 'label': 'coverage', 'message': f'{pct}%', 'color': 'teal'}
+          with open('coverage-badge.json', 'w') as f:
+              json.dump(badge, f)
+          "
+          rm coverage.json
 
       - name: Verify changed files
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: tj-actions/verify-changed-files@v20
         id: verify-changed-files
         with:
-          files: coverage.svg
+          files: coverage-badge.json
 
-      - name: Commit badge
+      - name: Commit badge data
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify-changed-files.outputs.files_changed == 'true'
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add coverage.svg
-          git commit -m "chore: update coverage badge"
+          git add coverage-badge.json
+          git commit -m "chore: update coverage badge data"
           git push

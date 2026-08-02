@@ -7,7 +7,7 @@ Search, catalog, download, and stream media with a high-performance interactive 
 
 [![PyPI version](https://badge.fury.io/py/bunkr-api.svg)](https://badge.fury.io/py/bunkr-api)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-![Coverage](https://raw.githubusercontent.com/mrflattire/bunkr-api/main/coverage.svg)
+![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/mrflattire/bunkr-api/main/coverage-badge.json)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
