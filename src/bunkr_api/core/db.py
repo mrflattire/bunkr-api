@@ -216,8 +216,20 @@ class DatabaseManager:
             return album_id, new_count, updated_count
 
     def get_all_albums(self) -> list[sqlite3.Row]:
+        """Returns every album, plus a per-album total_assets/completed_assets
+        count so callers can show a '[COMPLETED]' badge without an extra
+        query per album. All original `albums` columns are still present.
+        """
         with closing(self._get_connection()) as conn:
-            return conn.execute("SELECT * FROM albums ORDER BY updated_at DESC;").fetchall()
+            return conn.execute("""
+                SELECT al.*,
+                       COUNT(a.id) AS total_assets,
+                       SUM(CASE WHEN a.download_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_assets
+                FROM albums al
+                LEFT JOIN assets a ON a.album_id = al.id
+                GROUP BY al.id
+                ORDER BY al.updated_at DESC;
+            """).fetchall()
 
     def get_album(self, album_id: int) -> sqlite3.Row | None:
         """Returns a single album's row, or None if no such album exists."""
