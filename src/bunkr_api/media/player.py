@@ -296,8 +296,15 @@ def prompt_for_inputs(db):
             staged_flag = (
                 " [bold green][STAGED][/bold green]" if album_dict.get("is_staged") == 1 else ""
             )
+            total_assets = album_dict.get("total_assets") or 0
+            completed_assets = album_dict.get("completed_assets") or 0
+            completed_flag = (
+                " [bold blue][COMPLETED][/bold blue]"
+                if total_assets > 0 and completed_assets == total_assets
+                else ""
+            )
             console.print(
-                f"  [cyan]{idx:2d}[/cyan] • [yellow]{album_dict['title']}[/yellow] ({album_dict['file_count']} items){staged_flag} [dim](DB ID: {album_dict['id']})[/dim]"
+                f"  [cyan]{idx:2d}[/cyan] • [yellow]{album_dict['title']}[/yellow] ({album_dict['file_count']} items){staged_flag}{completed_flag} [dim](DB ID: {album_dict['id']})[/dim]"
             )
         console.print()
 
@@ -377,23 +384,17 @@ async def run_player_logic(args_db_id=None, args_number=None, args_player=None, 
 
     if run_staged:
         console.print("[bold cyan][*] Extracting all active staged files...[/bold cyan]")
-        with db.connection() as conn:
-            rows = conn.execute("""
-                SELECT a.* FROM assets a
-                LEFT JOIN albums al ON a.album_id = al.id
-                WHERE a.is_staged = 1 OR al.is_staged = 1
-                ORDER BY a.album_id, a.track_number ASC;
-            """).fetchall()
-            for asset in rows:
-                files_list.append(
-                    {
-                        "id": asset["id"],
-                        "title": asset["title"] or asset["original_filename"],
-                        "signed_cdn_url": asset["signed_cdn_url"],
-                        "token_expiry_timestamp": asset["token_expiry_timestamp"],
-                        "true_file_id": asset["true_file_id"],
-                    }
-                )
+        rows = db.get_staged_assets()
+        for asset in rows:
+            files_list.append(
+                {
+                    "id": asset["id"],
+                    "title": asset["title"] or asset["original_filename"],
+                    "signed_cdn_url": asset["signed_cdn_url"],
+                    "token_expiry_timestamp": asset["token_expiry_timestamp"],
+                    "true_file_id": asset["true_file_id"],
+                }
+            )
     elif db_id:
         console.print(f"[*] Querying database tracker for Album ID: {db_id}...")
         assets = db.get_album_assets(db_id)
