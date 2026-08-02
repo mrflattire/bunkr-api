@@ -86,10 +86,16 @@ async def show_album_details(album_id):
 
         # 2. Render Header
         staged_badge = " [bold green][STAGED][/bold green]" if album.get("is_staged") else ""
+        completed_count = sum(1 for x in assets if dict(x).get("download_status") == "COMPLETED")
+        completed_badge = (
+            " [bold blue][COMPLETED][/bold blue]"
+            if total_items > 0 and completed_count == total_items
+            else ""
+        )
         summary = (
             f"[bold cyan]Origin Context:[/bold cyan] {album['search_term'] or 'Direct Link / Import'}\n"
             f"[bold cyan]Album Global Index:[/bold cyan] #{album['global_index']}\n"
-            f"[bold cyan]Reported Dataset Size:[/bold cyan] {album['aggregate_size']} ({album['file_count']} files){staged_badge}"
+            f"[bold cyan]Reported Dataset Size:[/bold cyan] {album['aggregate_size']} ({album['file_count']} files){staged_badge}{completed_badge}"
         )
         console.print(Panel(summary, title=f"[bold green]Parsed DB Record: {album['title']}[/bold green]", expand=False))
 
@@ -357,7 +363,10 @@ async def main_loop():
             for i, a in enumerate(albums, start=1):
                 a_dict = dict(a)
                 staged = " [bold green][STAGED][/bold green]" if a_dict.get('is_staged') else ""
-                console.print(f"  [bold cyan]{i:2d}[/bold cyan] • [yellow]{a_dict['title']}[/yellow] ({a_dict['file_count']} items){staged} [dim white](DB ID: {a_dict['id']})[/dim white]")
+                total_assets = a_dict.get('total_assets') or 0
+                completed_assets = a_dict.get('completed_assets') or 0
+                completed = " [bold blue][COMPLETED][/bold blue]" if total_assets > 0 and completed_assets == total_assets else ""
+                console.print(f"  [bold cyan]{i:2d}[/bold cyan] • [yellow]{a_dict['title']}[/yellow] ({a_dict['file_count']} items){staged}{completed} [dim white](DB ID: {a_dict['id']})[/dim white]")
 
         console.print()
         console.print(" [bold white]s.[/bold white] Search for or discover a new album")
