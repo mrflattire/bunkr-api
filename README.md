@@ -5,9 +5,11 @@
 **Modular Python toolkit and API wrapper for Bunkr**  
 Search, catalog, download, and stream media with a high-performance interactive terminal UI.
 
-[![Version](https://img.shields.io/badge/version-0.1.0--beta.4-orange)](https://github.com/mrflattire/bunkr-api)
+[![PyPI version](https://badge.fury.io/py/bunkr-api.svg)](https://badge.fury.io/py/bunkr-api)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+![Coverage](https://raw.githubusercontent.com/mrflattire/bunkr-api/main/coverage.svg)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 [Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Usage](#-detailed-usage--advanced-workflows)
 

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Run tests with coverage
+        run: uv run coverage run -m pytest
+
+      - name: Coverage report
+        run: uv run coverage report -m
+
+      - name: Generate coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: uv run coverage-badge -o coverage.svg -f
+
+      - name: Verify changed files
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: tj-actions/verify-changed-files@v20
+        id: verify-changed-files
+        with:
+          files: coverage.svg
+
+      - name: Commit badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify-changed-files.outputs.files_changed == 'true'
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add coverage.svg
+          git commit -m "chore: update coverage badge"
+          git push
