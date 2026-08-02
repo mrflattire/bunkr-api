@@ -36,6 +36,7 @@ where = ["src"]
 [dependency-groups]
 dev = [
     "coverage>=7.15.2",
+    "coverage-badge>=1.1.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
