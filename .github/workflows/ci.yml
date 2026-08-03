@@ -1,4 +1,4 @@
-name: Coverage
+name: CI
 
 on:
   push:
@@ -25,13 +25,15 @@ jobs:
         run: uv sync
 
       - name: Lint
+        id: lint
         run: uv run ruff check .
 
       - name: Run tests with coverage
+        id: test
         run: uv run pytest
 
       - name: Generate coverage badge JSON
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           uv run coverage json -o coverage.json
           uv run python -c "
@@ -43,20 +45,35 @@ jobs:
           with open('coverage-badge.json', 'w') as f:
               json.dump(badge, f)
           "
-          rm coverage.json
+          rm -f coverage.json
+
+      - name: Generate CI badge JSON
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if [ "${{ steps.lint.outcome }}" = "success" ] && [ "${{ steps.test.outcome }}" = "success" ]; then
+            MESSAGE="passing"; COLOR="green"
+          else
+            MESSAGE="failing"; COLOR="red"
+          fi
+          cat > ci-badge.json <<EOF
+          {"schemaVersion":1,"label":"CI","message":"${MESSAGE}","color":"${COLOR}"}
+          EOF
+          echo "WROTE ci-badge.json: $(cat ci-badge.json)"
 
       - name: Verify changed files
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: tj-actions/verify-changed-files@v20
         id: verify-changed-files
         with:
-          files: coverage-badge.json
+          files: |
+            coverage-badge.json
+            ci-badge.json
 
       - name: Commit badge data
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify-changed-files.outputs.files_changed == 'true'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify-changed-files.outputs.files_changed == 'true'
         run: |
           git config --local user.name "coverage-badge-bot"
           git config --local user.email "coverage-badge-bot@users.noreply.github.com"
-          git add coverage-badge.json
-          git commit -m "chore: update coverage badge data"
+          git add coverage-badge.json ci-badge.json
+          git commit -m "chore: update coverage and CI badge data"
           git push

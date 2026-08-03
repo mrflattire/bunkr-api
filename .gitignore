@@ -22,6 +22,7 @@ env/
 # Ignore all JSON files anywhere in the project
 *.json
 !coverage-badge.json
+!ci-badge.json
 
 # Ignore the recon directory and everything inside it
 #recon/
