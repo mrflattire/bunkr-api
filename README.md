@@ -6,7 +6,7 @@
 Search, catalog, download, and stream media with a high-performance interactive terminal UI.
 
 [![CI](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/mrflattire/bunkr-api/main/ci-badge.json&cacheSeconds=300&&logo=github)](https://github.com/mrflattire/bunkr-api/actions)
-[![PyPI version](https://badge.fury.io/py/bunkr-api.svg?icon=si%3Apython)](https://pypi.org/project/bunkr-api)
+[![PyPI version](https://badge.fury.io/py/bunkr-api.svg?icon=si%3Apython&maxAge=300)](https://pypi.org/project/bunkr-api)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 ![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/mrflattire/bunkr-api/main/coverage-badge.json&cacheSeconds=300&logo=pytest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
