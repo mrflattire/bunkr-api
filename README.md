@@ -153,7 +153,7 @@ asyncio.run(main())
 <details open>
 <summary><h3>Main Dashboard Interface (`bunkr-api`)</h3></summary>
 
-The primary entry point of the toolkit. It serves as an interactive hub for managing your entire media catalog. It is designed to intelligently handle inputs—whether you want to browse your collection, jump to a specific album, or import json metadata files.
+The primary entry point of the toolkit. It serves as an interactive hub for managing your entire media catalog. It is designed to intelligently handle inputs, whether you want to browse your collection, jump to a specific album, or import json metadata files.
 
 ```sh
 bunkr-api [OPTIONS] [PATH/ID]
@@ -475,7 +475,7 @@ While the main `bunkr-api` dashboard triggers an automated "Escape Hatch" refres
 <details>
 <summary><h3>Python API (`BunkrAPI`)</h3></summary>
 
-Everything the CLI tools do is also available as a plain Python library, so you can script your own workflows — cron jobs, batch imports, custom dashboards — without touching the terminal UI at all. `BunkrAPI` is a single facade class wrapping the scraper, downloader, player, and database.
+Everything the CLI tools do is also available as a plain Python library, so you can script your own workflows, like cron jobs, batch imports, custom dashboards, all without touching the terminal UI at all. `BunkrAPI` is a single facade class wrapping the scraper, downloader, player, and database.
 
 ```python
 from bunkr_api import BunkrAPI
@@ -513,12 +513,12 @@ api = BunkrAPI()  # uses the same ~/.bunkr_api/media_tracker.db as the CLI tools
 #### Maintenance
 | Method | Description |
 | :--- | :--- |
-| `refresh_tokens(album_id=None)` *(async)* | Refreshes any expiring CDN tokens — scoped to one album, or the whole database if omitted. Always a single pass; never blocks forever. |
+| `refresh_tokens(album_id=None)` *(async)* | Refreshes any expiring CDN tokens; scoped to one album, or the whole database if omitted. Always a single pass; never blocks forever. |
 | `delete_album(album_id)` *(sync)* | Deletes an album and all its assets (cascades at the database level). Returns `True` if something was actually deleted. |
 
 ---
 
-**Example — the classic three-step flow:**
+**Example ; the classic three-step flow:**
 
 ```python
 import asyncio
@@ -536,7 +536,7 @@ async def main():
 asyncio.run(main())
 ```
 
-**Example — the same flow, collapsed into one call:**
+**Example ; the same flow, collapsed into one call:**
 
 ```python
 import asyncio
@@ -552,7 +552,7 @@ async def main():
 asyncio.run(main())
 ```
 
-**Example — browsing your existing catalog without touching the network:**
+**Example ; browsing your existing catalog without touching the network:**
 
 ```python
 from bunkr_api import BunkrAPI
@@ -571,7 +571,7 @@ if album:
         print(f"  -> {api.get_valid_url(asset['id'])}")
 ```
 
-**Example — streaming programmatically:**
+**Example ; streaming programmatically:**
 
 ```python
 import asyncio
@@ -585,7 +585,7 @@ async def main():
 asyncio.run(main())
 ```
 
-**Example — maintenance batch jobs (great for a nightly cron script):**
+**Example ; maintenance batch jobs (great for a nightly cron script):**
 
 ```python
 import asyncio
@@ -606,7 +606,7 @@ async def nightly_maintenance():
 asyncio.run(nightly_maintenance())
 ```
 
-**Example — resolving several albums concurrently with `asyncio.gather`:**
+**Example ; resolving several albums concurrently with `asyncio.gather`:**
 
 ```python
 import asyncio
@@ -633,7 +633,7 @@ async def main():
 asyncio.run(main())
 ```
 
-**Example — cleaning up an album you no longer want:**
+**Example ; cleaning up an album you no longer want:**
 
 ```python
 from bunkr_api import BunkrAPI
@@ -645,8 +645,8 @@ print(f"Album 5 removed: {was_deleted}")  # False if it never existed
 
 ### Why the Python API is useful:
 1.  **No CLI required for automation**: cron jobs, scheduled maintenance, or a custom Discord bot can all drive the same database the interactive tools use, with zero terminal interaction.
-2.  **Composable**: every method returns plain dicts/lists/ints/bools — no custom objects to learn — so it's trivial to slot into an existing script, web framework, or notebook.
-3.  **Safe to embed**: because the network/disk/subprocess methods are genuinely async (not just decorated), you can call them from inside your own already-running event loop — a FastAPI route handler, a Discord.py command, a Jupyter cell — without the classic "asyncio.run() cannot be called from a running event loop" crash.
+2.  **Composable**: every method returns plain dicts/lists/ints/bools. No custom objects to learn, so it's trivial to slot into an existing script, web framework, or notebook.
+3.  **Safe to embed**: because the network/disk/subprocess methods are genuinely async (not just decorated), you can call them from inside your own already-running event loop; a FastAPI route handler, a Discord.py command, a Jupyter cell, all without the classic "asyncio.run() cannot be called from a running event loop" crash.
 
 </details>
 
@@ -659,7 +659,7 @@ The application stores all data in a hidden directory in your user profile to en
 *   **SQLite Database**: `~/.bunkr_api/media_tracker.db`
 *   **Logs**: `~/.bunkr_api/logs/`
 *   **Default Downloads**: `~/Downloads/bunkr_downloads/`
-*   **Default JSON Exports**: `~/Downloads/bunkr_downloads/jsons/` — used by both `bunkr-api --save-json` and `bunkr-scrape --save-json` when `-o/--output` isn't given.
+*   **Default JSON Exports**: `~/Downloads/bunkr_downloads/jsons/` Used by both `bunkr-api --save-json` and `bunkr-scrape --save-json` when `-o/--output` isn't given.
 
 > **Pro Tip**: Every command that writes files (`bunkr-scrape --save-json`, `bunkr-download`, etc.) accepts an `-o/--output` flag to override its destination for that run.
 
