@@ -4,15 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bunkr-api"
-version = "0.1.0-beta.5"
+version = "0.1.0"
 description = "Interactive Python API wrapper for Bunkr"
 readme = "README.md"
-license="MIT"
+license = "MIT"
 authors = [
     { name = "mrflattire", email = "mrflattirex@gmail.com" }
 ]
-
 requires-python = ">=3.12"
+
+keywords = [
+    "bunkr",
+    "api",
+    "scraper",
+    "downloader",
+    "media-downloader",
+    "yt-dlp",
+    "cli"
+]
+
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
 
 dependencies = [
     "rich>=13.0.0",

@@ -176,7 +176,7 @@ bunkr-api -i ./album_metadata.json
 bunkr-api "./path/to/metadata.json"
 
 # Perform a quick search and resolution directly from the launch command
-bunkr-api "Natalie Roush" --mode broad --per 40
+bunkr-api "Natalie Roush" --mode broad --per 40 --sort latest
 ```
 
 **Main Catalog Commands:**
