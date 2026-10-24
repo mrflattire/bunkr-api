@@ -52,6 +52,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4          # new: the job needs CHANGELOG.md
       - uses: actions/download-artifact@v4
         with:
           name: dist
@@ -62,20 +63,26 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          # Tags like v0.3.0b1 / v0.3.0rc1 / v0.3.0a2 / v0.3.0.dev1 are pre-releases.
           flags=""
           if [[ "$TAG" =~ (a|b|rc|\.dev)[0-9]+$ ]]; then
             flags="--prerelease"
           fi
 
+          # Use this version's section of CHANGELOG.md as the notes, if there is one.
+          version="${TAG#v}"
+          awk -v v="$version" '
+            /^## \[/ { if (found) exit; if (index($0, "[" v "]")) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          notes=()
+          if [ -s notes.md ]; then notes=(--notes-file notes.md); fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            # Re-run of the workflow: keep the existing release and notes, refresh the files.
             gh release upload "$TAG" dist/* --clobber
           else
-            # Remove --draft to publish immediately instead of reviewing first.
             gh release create "$TAG" dist/* \
               --title "$TAG" \
               --generate-notes \
               --verify-tag \
-              --draft $flags
+              --draft $flags "${notes[@]}"
           fi
