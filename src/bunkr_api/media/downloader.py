@@ -329,28 +329,28 @@ def prompt_for_workers() -> int:
     except ValueError:
         return 1
 
-def main():
-    """Standalone CLI entry point for 'bunkr-download'."""
-    import argparse
+def add_arguments(parser) -> None:
+    """Attach the 'download' options to *parser* (used by `bunkr-api download`)."""
+    src = parser.add_argument_group("source (choose one; omit all to browse interactively)")
+    pick = src.add_mutually_exclusive_group()
+    pick.add_argument("--db-id", type=int, metavar="ID", help="download the album with this database ID")
+    pick.add_argument("--staged", action="store_true", help="download everything currently staged")
+    pick.add_argument("--triage", action="store_true", help="retry every file marked FAILED")
+    pick.add_argument("-i", "--input", metavar="FILE", help="download from a legacy JSON metadata file")
 
+    parser.add_argument("-w", "--workers", type=int, metavar="N", help="concurrent downloads (default: 1)")
+    parser.add_argument("-n", "--number", metavar="SEL", help="only these files, e.g. 1,3,5-8 or 'all'")
+    parser.add_argument("-o", "--output", metavar="DIR", help="download directory (default: ~/Downloads/bunkr_downloads)")
+
+
+def run(args) -> int:
+    """Resolve the requested files and download them. Returns a process exit code."""
     from ..core.db import DatabaseManager
-
-    parser = argparse.ArgumentParser(
-        prog="bunkr-download",
-        description="Bunkr Standalone Downloader CLI"
-    )
-    parser.add_argument('-i', '--input', type=str, help="Legacy JSON path")
-    parser.add_argument('--db-id', type=int, help="Database ID for album to download")
-    parser.add_argument('-w', '--workers', type=int, help="Worker concurrency")
-    parser.add_argument('-n', '--number', type=str, help="Item/file selection")
-    parser.add_argument('-o', '--output', type=str, help="Output directory")
-    parser.add_argument('--staged', action='store_true', help="Download staged items")
-    parser.add_argument('--triage', action='store_true', help="Download failed items")
-    args = parser.parse_args()
+    from ..utils.aio import run_async
 
     db = DatabaseManager()
     engine = DownloadEngine(db)
-    
+
     input_json_path = args.input
     db_id = args.db_id
     selection_arg = args.number
@@ -358,26 +358,31 @@ def main():
     run_staged = args.staged
     run_triage = args.triage
 
-    # Interactive Fallback
-    if not any([db_id, input_json_path, run_staged, run_triage]) and len(sys.argv) == 1:
+    # No source given: browse interactively on a terminal, otherwise fail fast
+    # (a cron job or pipe must never hang waiting on a prompt).
+    if not any([db_id, input_json_path, run_staged, run_triage]):
+        if not sys.stdin.isatty():
+            console.print(
+                "[red][!] Nothing to download: pass --db-id, --staged, --triage or --input.[/red]"
+            )
+            return 2
         input_json_path, db_id, selection_arg, workers, run_staged, run_triage = prompt_for_inputs(db)
 
-    if not workers: workers = 1
-    
+    if not workers:
+        workers = 1
+
     files_list = []
 
     if run_staged:
         console.print("[bold cyan][*] Extracting all staged files...[/bold cyan]")
-        rows = db.get_staged_assets()
-        for r in rows:
+        for r in db.get_staged_assets():
             d = dict(r)
             d['db_asset_id'] = d['id']
             files_list.append(d)
 
     elif run_triage:
         console.print("[bold red][*] Auto-Triage: Retrying failed downloads...[/bold red]")
-        rows = db.get_failed_assets()
-        for r in rows:
+        for r in db.get_failed_assets():
             d = dict(r)
             d['db_asset_id'] = d['id']
             files_list.append(d)
@@ -387,9 +392,8 @@ def main():
             album = conn.execute("SELECT * FROM albums WHERE id=?", (db_id,)).fetchone()
             if not album:
                 console.print(f"[red][!] Album {db_id} not found.[/red]")
-                return
-            assets = db.get_album_assets(db_id)
-            for a in assets:
+                return 1
+            for a in db.get_album_assets(db_id):
                 d = dict(a)
                 d['db_asset_id'] = d['id']
                 d['album_title'] = album['title']
@@ -397,8 +401,12 @@ def main():
                 files_list.append(d)
 
     elif input_json_path:
-        with open(input_json_path, encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(input_json_path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            console.print(f"[red][!] Could not read {input_json_path}: {e}[/red]")
+            return 1
         meta = data.get("selected_album", {})
         for item in data.get("files_found", []):
             files_list.append({
@@ -407,31 +415,40 @@ def main():
                 "album_title": meta.get("title", "unknown"),
                 "title": item.get("original") or item.get("title"),
                 "signed_cdn_url": item.get("signed_cdn_url"),
-                "true_file_id": item.get("true_file_id")
+                "true_file_id": item.get("true_file_id"),
             })
 
     if not files_list:
+        # Nothing to do is not a failure (e.g. a nightly `--staged` with an empty queue).
         console.print("[yellow][!] No targets available.[/yellow]")
-        return
+        return 0
 
-    # Filter selection
     if selection_arg and selection_arg != 'all':
         try:
             indices = parse_selection(selection_arg, total_items=len(files_list))
-            files_list = [files_list[i-1] for i in indices]
+            files_list = [files_list[i - 1] for i in indices]
         except (ValueError, TypeError, IndexError) as e:
             console.print(f"[red][!] Selection error: {e}[/red]")
-            return
+            return 2
 
     out_dir = Path(args.output).expanduser() if args.output else DEFAULT_OUTPUT_DIR
     try:
-        asyncio.run(engine.run(files_list, workers=workers, output_dir=out_dir))
+        run_async(engine.run(files_list, workers=workers, output_dir=out_dir))
     except (KeyboardInterrupt, asyncio.CancelledError):
         # Safety net for an interrupt landing before run()'s own try block
         # starts (e.g. during the token pre-minting await) — that window
         # isn't covered by run()'s internal handler, so without this the
         # user would see a raw traceback instead of a clean exit.
         console.print("\n[bold yellow][!] Interrupted before downloads started.[/bold yellow]")
+        return 130
+    return 0
+
+
+def main() -> int:
+    """Legacy alias: `bunkr-download ...` is `bunkr-api download ...`."""
+    from ..cli import main as cli_main
+    return cli_main(["download", *sys.argv[1:]])
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
