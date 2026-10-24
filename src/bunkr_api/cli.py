@@ -1,11 +1,10 @@
 import argparse
-import asyncio
 import json
 import os
+import shlex
 import sys
 import time
 import urllib.parse
-from pathlib import Path
 
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
@@ -14,21 +13,23 @@ from rich.panel import Panel
 from rich.prompt import IntPrompt, Prompt
 from rich.table import Table
 
+# Internal package imports
+from . import inspector as inspect_cmd
 from .config import (
-    DEFAULT_JSON_DIR,
     SEARCH_MODES,
     SORT_TYPES,
     TOP_CATEGORIES,
     VALID_COUNTS,
     VERSION,
 )
-
-# Internal package imports
+from .core import scraper as scrape_cmd, tokens as mint_cmd
 from .core.db import DatabaseManager
 from .core.scraper import ScraperEngine
 from .core.tokens import refresh_all_tokens_async
+from .media import downloader as download_cmd, player as stream_cmd
 from .media.downloader import DownloadEngine
 from .media.player import PlayerEngine
+from .utils.aio import run_async
 from .utils.formatting import (
     clean_dragged_path,
     format_bytes,
@@ -429,113 +430,175 @@ async def main_loop():
         except (ValueError, IndexError):
             console.print("[red][!] Invalid selection or unknown command.[/red]")
 
-async def _run():
-    """
-    MASTER CLI ENTRY POINT (async implementation)
-    (Matches logic from original read.py main block)
-    """
-    parser = argparse.ArgumentParser(
-        prog="bunkr-api",
-        description=f"Bunkr API Manager {VERSION} - Interactive Dashboard & Master CLI",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Master Help - Related Binaries:
-  bunk-api         Dive straight into the main interactive CLI.
-  bunkr-scrape     Search bunkr by creator name.
-  bunkr-stream     Stream content from a database ID (bunkr-stream --db-id 3).
-  bunkr-download   Batch download content from a database ID (bunkr-download --db-id 3).
-  bunkr-inspect    Database maintenance and reporting.
-  bunkr-mint       Open concurrent token minting daemon.
-        """
-    )
-    # Core Metadata
-    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}')
+# ============================================================
+# Command-line interface
+#
+#   bunkr-api                 interactive dashboard
+#   bunkr-api <command> ...   explicit, scriptable subcommands
+#
+# Each tool module owns its own options (add_arguments) and behaviour (run);
+# this file only wires them together under one parser.
+# ============================================================
 
-    # Search & Scraping Flags
-    parser.add_argument("search", nargs="?", default=None, help="The search query")
-    parser.add_argument("-m", "--mode", choices=list(SEARCH_MODES.keys()), help="Search mode")
-    parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="Results per page")
-    parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Sorting metric")
-    parser.add_argument("-t", "--top", nargs="?", const="prompt", help="Trending category")
-    parser.add_argument("--save-json", action="store_true", help="Save backup JSON")
-    parser.add_argument("-o", "--output", type=Path, default=DEFAULT_JSON_DIR, help="Target directory to save JSON")
+COMMANDS = ("open", "import", "scrape", "download", "stream", "mint", "inspect")
 
-    # Working Flags
-    parser.add_argument('--db-id', type=int, help="Jump directly to an album in database by ID.")
-    parser.add_argument('-i', '--input', type=str, help="Import a legacy JSON file and view it.")
-    
-    # NOTE: previously there was a second `path` positional here meant to
-    # catch a bare numeric ID or JSON path. Since `search` (declared above)
-    # is also an optional positional, argparse always assigns a single bare
-    # token to `search` first — `path` could never actually receive it
-    # (confirmed empirically). Removed in favor of interpreting args.search
-    # itself below, in priority order: JSON path -> numeric ID -> search term.
+EXAMPLES = """\
+examples:
+  bunkr-api                              open the interactive dashboard
+  bunkr-api scrape "creator name"        search, catalog an album, open it
+  bunkr-api scrape --top albums          browse trending albums
+  bunkr-api open 17                      view album 17 from the database
+  bunkr-api download --db-id 17 -w 3     download album 17, 3 files at a time
+  bunkr-api download --staged            download everything you have staged
+  bunkr-api stream --db-id 17 -n 2-4     stream files 2 to 4 of album 17
+  bunkr-api inspect view albums          per-album progress report
 
-    args = parser.parse_args()
+Run 'bunkr-api <command> -h' for the options of a command.
+"""
 
-    # Route 1: Handle Import (-i or a bare positional ending in .json)
-    target_path = args.input or (args.search if args.search and args.search.endswith('.json') else None)
-    if target_path:
-        processed = clean_dragged_path(target_path)
-        if os.path.exists(processed):
-            try:
-                with open(processed, encoding='utf-8') as f:
-                    data = json.load(f)
-                new_id, _new_count, _updated_count = db.register_album_from_json(data)
-                await show_album_details(new_id)
-                return
-            except Exception as e:
-                console.print(f"[bold red][!] Import failed: {e}[/bold red]")
-                sys.exit(1)
 
-    # Route 2: Handle Direct Jump (--db-id or a bare numeric positional)
-    raw_val = args.db_id or (int(args.search) if args.search and args.search.isdigit() else None)
-    if raw_val:
-        await show_album_details(raw_val)
-        return
-
-    # Route 3: Handle Scraper Command Direct Executions
-    url_mode = SEARCH_MODES.get(args.mode) if args.mode else None
-    if args.search or args.top or args.mode or args.save_json or args.output != DEFAULT_JSON_DIR:
-        if args.top:
-            album_id = await run_top_engine_interactive(
-                category_seed=args.top if args.top != "prompt" else None,
-                save_json_seed=args.save_json,
-                output_dir_seed=args.output
-            )
-        else:
-            album_id = await run_scrape_interactive(
-                search_seed=args.search,
-                mode_seed=url_mode,
-                per_seed=args.per,
-                sort_seed=args.sort,
-                save_json_seed=args.save_json,
-                output_dir_seed=args.output
-            )
-        if album_id:
-            await show_album_details(album_id)
-        return
-
-    # Default: Interactive Main Menu Loop
+def cmd_dashboard(args) -> int:
+    """No subcommand: the interactive main menu."""
     try:
-        await main_loop()
+        run_async(main_loop())
     except KeyboardInterrupt:
         console.print("\n[bold yellow][!] Session terminated gracefully.[/bold yellow]")
-        sys.exit(0)
+    return 0
 
-def main():
+
+def cmd_open(args) -> int:
+    run_async(show_album_details(args.album_id))
+    return 0
+
+
+def cmd_import(args) -> int:
+    path = clean_dragged_path(args.file)
+    if not os.path.exists(path):
+        console.print(f"[bold red][!] File not found: {path}[/bold red]")
+        return 1
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        new_id, _new_count, _updated_count = db.register_album_from_json(data)
+    except Exception as e:
+        console.print(f"[bold red][!] Import failed: {e}[/bold red]")
+        return 1
+    run_async(show_album_details(new_id))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="bunkr-api",
+        description=(
+            f"Bunkr API Manager {VERSION}\n\n"
+            "Run with no command to open the interactive dashboard, or pick a command below."
+        ),
+        epilog=EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {VERSION}")
+    parser.set_defaults(func=cmd_dashboard)
+
+    sub = parser.add_subparsers(dest="command", title="commands", metavar="<command>")
+
+    def add(name, help_text, module=None, run=None, **kw):
+        p = sub.add_parser(
+            name, help=help_text, description=help_text[0].upper() + help_text[1:] + ".",
+            formatter_class=argparse.RawDescriptionHelpFormatter, **kw,
+        )
+        if module is not None:
+            module.add_arguments(p)
+        p.set_defaults(func=run or module.run)
+        return p
+
+    add("scrape", "search Bunkr (or browse trending) and catalog an album", scrape_cmd)
+    add("download", "download an album, your staged files, or failed files", download_cmd)
+    add("stream", "stream an album or your staged files in mpv/vlc", stream_cmd)
+    add("open", "view an album that is already in the database", run=cmd_open) \
+        .add_argument("album_id", type=int, metavar="ID", help="database ID of the album")
+    add("import", "import a legacy JSON metadata file and view it", run=cmd_import) \
+        .add_argument("file", metavar="FILE", help="path to the JSON file")
+    add("mint", "refresh expiring download tokens (daemon, or one album)", mint_cmd)
+    add("inspect", "database reports, staging and maintenance", inspect_cmd)
+    return parser
+
+
+# ------------------------------------------------------------
+# Legacy invocations (pre-subcommand CLI)
+#
+# `bunkr-api 17`, `bunkr-api "query"`, `bunkr-api -i file.json`, `--db-id 17`
+# and top-level scrape flags still work: they are translated to the matching
+# subcommand with a notice on stderr. Delete this block (and its call in
+# main) to drop the compatibility layer.
+# ------------------------------------------------------------
+
+class _QuietParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise ValueError(message)
+
+
+def _legacy_parser() -> argparse.ArgumentParser:
+    p = _QuietParser(prog="bunkr-api", add_help=False)
+    p.add_argument("search", nargs="?")
+    p.add_argument("-m", "--mode")
+    p.add_argument("-p", "--per")
+    p.add_argument("-s", "--sort")
+    p.add_argument("-t", "--top", nargs="?", const="prompt")
+    p.add_argument("--save-json", action="store_true")
+    p.add_argument("-o", "--output")
+    p.add_argument("--db-id", type=int)
+    p.add_argument("-i", "--input")
+    return p
+
+
+def _translate_legacy(argv: list[str]) -> tuple[list[str], str | None]:
+    """Map an old-style argv onto the subcommand CLI.
+
+    Returns (argv, hint); *hint* is the equivalent new command when a
+    translation happened, else None.
     """
-    Synchronous entry point. This is what pyproject.toml's [project.scripts]
-    'bunkr-api = "bunkr_api.cli:main"' actually calls — entry-point scripts
-    invoke the target function directly, they do NOT await coroutines. So
-    this must stay a plain sync function that wraps the real async logic in
-    asyncio.run(), same pattern as downloader.py/player.py/tokens.py's main().
-    """
-    loop_f = asyncio.SelectorEventLoop if sys.platform == 'win32' else None
-    if loop_f:
-        asyncio.run(_run(), loop_factory=loop_f)
+    passthrough = ("-h", "--help", "-v", "--version")
+    if not argv or argv[0] in COMMANDS or any(a in passthrough for a in argv):
+        return argv, None
+
+    try:
+        ns = _legacy_parser().parse_args(argv)
+    except ValueError:
+        ns = None  # let the real parser report the problem against 'scrape'
+
+    if ns is not None:
+        json_path = ns.input or (ns.search if ns.search and ns.search.endswith(".json") else None)
+        album_id = ns.db_id if ns.db_id is not None else (
+            ns.search if ns.search and ns.search.isdigit() else None
+        )
+        if json_path:
+            new = ["import", json_path]
+        elif album_id is not None:
+            new = ["open", str(album_id)]
+        else:
+            new = ["scrape", *argv]
     else:
-        asyncio.run(_run())
+        new = ["scrape", *argv]
+
+    return new, "bunkr-api " + shlex.join(new)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for `bunkr-api`. Returns the process exit code."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    argv, hint = _translate_legacy(argv)
+    if hint:
+        print(f"note: this form is deprecated; use: {hint}", file=sys.stderr)
+
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args) or 0
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

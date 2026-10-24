@@ -186,12 +186,24 @@ def daemon_loop(album_id: int | None = None):
             time.sleep(10)
 
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(
-        prog="bunkr-mint",
-        description="Token Refresh Utility. Run 'bunkr-mint' with no options to launch the background daemon."
+def add_arguments(parser) -> None:
+    """Attach the 'mint' options to *parser* (used by `bunkr-api mint`)."""
+    parser.add_argument(
+        "-a", "--album-id", type=int, metavar="ID",
+        help="refresh just this album once and exit (default: run as a background daemon)",
     )
-    parser.add_argument('-a', '--album-id', type=int, help="Target a specific album ID for a one-shot refresh")
-    args = parser.parse_args()
+
+
+def run(args) -> int:
     daemon_loop(album_id=args.album_id)
+    return 0
+
+
+def main() -> int:
+    """Legacy alias: `bunkr-mint ...` is `bunkr-api mint ...`."""
+    from ..cli import main as cli_main
+    return cli_main(["mint", *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

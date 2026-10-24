@@ -453,28 +453,35 @@ async def run_player_logic(args_db_id=None, args_number=None, args_player=None, 
         await engine.play_mpv(queue)
 
 
-def main():
-    """Standalone CLI entry point."""
-    import argparse
+def add_arguments(parser) -> None:
+    """Attach the 'stream' options to *parser* (used by `bunkr-api stream`)."""
+    src = parser.add_argument_group("source (choose one; omit to browse interactively)")
+    pick = src.add_mutually_exclusive_group()
+    pick.add_argument("--db-id", type=int, metavar="ID", help="stream the album with this database ID")
+    pick.add_argument("--staged", action="store_true", help="stream everything currently staged")
 
-    parser = argparse.ArgumentParser(
-        prog="bunkr-stream",
-        description="Bunkr Standalone Streamer CLI"
-    )
-    parser.add_argument("--db-id", type=int, help="Database ID for album to stream")
-    parser.add_argument("-n", "--number", type=str, help="Item/file selection")
-    parser.add_argument("--player", choices=["mpv", "vlc"], help="Select media player engine")
-    parser.add_argument("--staged", action="store_true", help="Stream staged items")
-    args = parser.parse_args()
+    parser.add_argument("-n", "--number", metavar="SEL", help="only these files, e.g. 1,3,5-8 or 'all'")
+    parser.add_argument("--player", choices=["mpv", "vlc"], help="media player to use (default: mpv)")
 
-    loop_f = asyncio.SelectorEventLoop if sys.platform == "win32" else None
-    if loop_f:
-        asyncio.run(
-            run_player_logic(args.db_id, args.number, args.player, args.staged), loop_factory=loop_f
-        )
-    else:
-        asyncio.run(run_player_logic(args.db_id, args.number, args.player, args.staged))
+
+def run(args) -> int:
+    """Stream the requested files. Returns a process exit code."""
+    from ..utils.aio import run_async
+
+    # No source given: browse interactively on a terminal, otherwise fail fast.
+    if not (args.db_id or args.staged or args.number) and not sys.stdin.isatty():
+        console.print("[red][!] Nothing to stream: pass --db-id or --staged.[/red]")
+        return 2
+
+    run_async(run_player_logic(args.db_id, args.number, args.player, args.staged))
+    return 0
+
+
+def main() -> int:
+    """Legacy alias: `bunkr-stream ...` is `bunkr-api stream ...`."""
+    from ..cli import main as cli_main
+    return cli_main(["stream", *sys.argv[1:]])
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

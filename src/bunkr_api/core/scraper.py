@@ -14,8 +14,10 @@ from ..config import (
     DEFAULT_OUTPUT_DIR,
     HEADERS,
     SEARCH_MODES,
+    TOP_CATEGORIES,
     VALID_COUNTS,
 )
+from ..utils.aio import run_async
 from ..utils.formatting import slugify_filename
 from ..utils.http import execute_request_with_retry_async
 
@@ -267,44 +269,69 @@ class ScraperEngine:
 
         return album_id
 
-def main():
-    """Standalone CLI entry point for bunkr-scrape command."""
-    parser = argparse.ArgumentParser(
-        prog="bunkr-scrape",
-        description="Bunkr Standalone Scraper CLI"
+def _top_category(value: str) -> str:
+    if value not in TOP_CATEGORIES:
+        raise argparse.ArgumentTypeError(
+            f"invalid category {value!r} (choose from {', '.join(TOP_CATEGORIES)})"
+        )
+    return value
+
+
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Attach the 'scrape' options to *parser* (used by `bunkr-api scrape`)."""
+    what = parser.add_mutually_exclusive_group()
+    what.add_argument("search", nargs="?", default=None, help="creator name or album title to search for")
+    what.add_argument(
+        "-t", "--top", nargs="?", const=True, default=None, type=_top_category,
+        metavar="CATEGORY",
+        help=f"browse trending instead of searching ({', '.join(TOP_CATEGORIES)}); "
+             "omit CATEGORY to be asked",
     )
-    parser.add_argument("search", nargs="?", default=None, help="The search query")
-    parser.add_argument("-m", "--mode", choices=list(SEARCH_MODES.keys()), help="Search mode")
-    parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="No. of results per page")
-    parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="Sort by")
-    parser.add_argument("-t", "--top", nargs="?", const="prompt", help="Trending category")
-    parser.add_argument("--save-json", action="store_true", help="Save backup JSON")
-    parser.add_argument("-o", "--output", type=str, default=str(DEFAULT_JSON_DIR), help="Output directory for a JSON metadata")
-    
-    args = parser.parse_args()
+    parser.add_argument("-m", "--mode", choices=list(SEARCH_MODES.keys()), help="search mode")
+    parser.add_argument("-p", "--per", type=int, choices=VALID_COUNTS, help="results per page")
+    parser.add_argument("-s", "--sort", choices=["latest", "oldest", "mostfiles"], help="sort order")
+    parser.add_argument("--save-json", action="store_true", help="also save the album metadata as JSON")
+    parser.add_argument(
+        "-o", "--output", type=Path, default=DEFAULT_JSON_DIR,
+        help="directory for --save-json output (default: %(default)s)",
+    )
+
+
+def run(args: argparse.Namespace) -> int:
+    """Search or browse trending, catalog the chosen album, then open its detail view."""
+    # Imported lazily: cli.py imports this module at load time.
+    from ..cli import run_scrape_interactive, run_top_engine_interactive, show_album_details
 
     url_mode = SEARCH_MODES.get(args.mode) if args.mode else None
-    
-    from ..cli import run_scrape_interactive, run_top_engine_interactive
 
-    async def _run():
+    async def _go():
         if args.top:
-            await run_top_engine_interactive(
-                category_seed=args.top if args.top != "prompt" else None,
+            album_id = await run_top_engine_interactive(
+                category_seed=None if args.top is True else args.top,
                 save_json_seed=args.save_json,
-                output_dir_seed=args.output
+                output_dir_seed=args.output,
             )
         else:
-            await run_scrape_interactive(
-                search_seed=args.search, 
-                mode_seed=url_mode, 
-                per_seed=args.per, 
+            album_id = await run_scrape_interactive(
+                search_seed=args.search,
+                mode_seed=url_mode,
+                per_seed=args.per,
                 sort_seed=args.sort,
                 save_json_seed=args.save_json,
-                output_dir_seed=args.output
+                output_dir_seed=args.output,
             )
+        if album_id:
+            await show_album_details(album_id)
 
-    try:
-        asyncio.run(_run())
-    except KeyboardInterrupt:
-        sys.exit(0)
+    run_async(_go())
+    return 0
+
+
+def main() -> int:
+    """Legacy alias: `bunkr-scrape ...` is `bunkr-api scrape ...`."""
+    from ..cli import main as cli_main
+    return cli_main(["scrape", *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

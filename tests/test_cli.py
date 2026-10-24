@@ -1,12 +1,9 @@
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from rich.table import Table
 
 from bunkr_api.cli import (
-    _run,
-    main,
     main_loop,
     run_scrape_interactive,
     run_top_engine_interactive,
@@ -592,126 +589,6 @@ async def test_run_top_engine_interactive_no_items_returns_none(mock_db):
 
 
 # ============================================================
-# _run() routing
-#
-# See the note above the test file: only --db-id and -i (the explicit flag
-# forms) actually work for jumping straight to an album. The bare-positional
-# convenience forms described in the code's own comments are dead code,
-# confirmed empirically — a single bare token always lands in `args.search`
-# (declared first), never in `args.path` (declared second), regardless of
-# whether it looks like a number or a .json filename.
-# ============================================================
-
-
-@pytest.mark.asyncio
-async def test_run_route_explicit_json_import(mock_db, tmp_path):
-    json_file = tmp_path / "album.json"
-    json_file.write_text(json.dumps({"selected_album": {}, "files_found": []}))
-    mock_db.register_album_from_json.return_value = (42, 1, 0)
-
-    with (
-        patch("sys.argv", ["bunkr-api", "-i", str(json_file)]),
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
-        await _run()
-
-    mock_show.assert_awaited_once_with(42)
-
-
-@pytest.mark.asyncio
-async def test_run_route_explicit_json_import_failure_exits(mock_db, tmp_path):
-    json_file = tmp_path / "bad.json"
-    json_file.write_text("not valid json{{{")
-
-    with patch("sys.argv", ["bunkr-api", "-i", str(json_file)]), pytest.raises(SystemExit):
-        await _run()
-
-
-@pytest.mark.asyncio
-async def test_run_route_explicit_db_id_flag(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api", "--db-id", "17"]),
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
-        await _run()
-
-    mock_show.assert_awaited_once_with(17)
-
-
-@pytest.mark.asyncio
-async def test_run_route_bare_numeric_positional_is_treated_as_db_id(mock_db):
-    """The old `path` positional was dead code (argparse always assigned a
-    bare token to `search`, declared first, so `path` could never receive
-    it). That's since been fixed by reinterpreting `args.search` itself in
-    priority order (JSON path -> numeric ID -> search term), so a bare
-    numeric positional like `bunkr-api 17` now correctly jumps straight to
-    album 17 instead of being treated as a literal search term.
-    """
-    with (
-        patch("sys.argv", ["bunkr-api", "17"]),
-        patch(
-            "bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock, return_value=None
-        ) as mock_scrape,
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
-        await _run()
-
-    mock_show.assert_awaited_once_with(17)
-    mock_scrape.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_run_route_search_term(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api", "some search"]),
-        patch(
-            "bunkr_api.cli.run_scrape_interactive", new_callable=AsyncMock, return_value=55
-        ) as mock_scrape,
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
-        await _run()
-
-    mock_scrape.assert_awaited_once()
-    mock_show.assert_awaited_once_with(55)
-
-
-@pytest.mark.asyncio
-async def test_run_route_top_flag(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api", "--top", "albums"]),
-        patch(
-            "bunkr_api.cli.run_top_engine_interactive", new_callable=AsyncMock, return_value=66
-        ) as mock_top,
-        patch("bunkr_api.cli.show_album_details", new_callable=AsyncMock) as mock_show,
-    ):
-        await _run()
-
-    mock_top.assert_awaited_once()
-    mock_show.assert_awaited_once_with(66)
-
-
-@pytest.mark.asyncio
-async def test_run_route_default_falls_back_to_main_loop(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api"]),
-        patch("bunkr_api.cli.main_loop", new_callable=AsyncMock) as mock_loop,
-    ):
-        await _run()
-
-    mock_loop.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_run_default_route_keyboard_interrupt_exits_cleanly(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api"]),
-        patch("bunkr_api.cli.main_loop", new_callable=AsyncMock, side_effect=KeyboardInterrupt),
-        pytest.raises(SystemExit),
-    ):
-        await _run()
-
-
-# ============================================================
 # main_loop
 # ============================================================
 
@@ -802,18 +679,3 @@ async def test_main_loop_invalid_selection_shows_error(mock_db, capsys):
         await main_loop()
 
     assert "Invalid selection" in capsys.readouterr().out
-
-
-# ============================================================
-# main
-# ============================================================
-
-
-def test_main_wraps_run_via_asyncio_run(mock_db):
-    with (
-        patch("sys.argv", ["bunkr-api"]),
-        patch("bunkr_api.cli.main_loop", new_callable=AsyncMock) as mock_loop,
-    ):
-        main()
-
-    mock_loop.assert_awaited_once()

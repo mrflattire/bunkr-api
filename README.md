@@ -46,7 +46,7 @@ uv tool install bunkr-api
 pip install bunkr-api
 ```
 
-> **Windows users:** `uv tool install` places executables in `%USERPROFILE%\.local\bin`, which is **not** on `PATH` by default on Windows (unlike most Linux/macOS setups). If `bunkr-api`, `bunkr-download`, etc. aren't recognized after install, run:
+> **Windows users:** `uv tool install` places executables in `%USERPROFILE%\.local\bin`, which is **not** on `PATH` by default on Windows (unlike most Linux/macOS setups). If `bunkr-api`, `bunkr-api download`, etc. aren't recognized after install, run:
 > ```powershell
 > uv tool update-shell
 > ```
@@ -111,19 +111,40 @@ Unlike standard video tools, **FFmpeg is not a prerequisite** for this package. 
 
 ### Command Line Interface
 
+`bunkr-api` is a single command. Run it bare for the interactive dashboard, or give it a subcommand for scripting:
+
 ```sh
 # Launch the main interactive catalog menu
 bunkr-api
 
 # Search for a creator and catalog their albums
-bunkr-scrape "creator_name"
+bunkr-api scrape "creator_name"
 
 # Download a specific album by its database ID
-bunkr-download --db-id 5 --workers 5
+bunkr-api download --db-id 5 --workers 5
 
 # Stream a specific album directly to MPV
-bunkr-stream --db-id 5
+bunkr-api stream --db-id 5
 ```
+
+| Command | What it does |
+| :--- | :--- |
+| `bunkr-api` | Interactive dashboard (no arguments) |
+| `bunkr-api scrape [QUERY]` | Search, or browse trending with `--top`, and catalog an album |
+| `bunkr-api download` | Download an album (`--db-id`), staged files (`--staged`), or failed files (`--triage`) |
+| `bunkr-api stream` | Stream an album or staged files in mpv/VLC |
+| `bunkr-api open ID` | Open an album already in the database |
+| `bunkr-api import FILE` | Import a legacy JSON metadata file and open it |
+| `bunkr-api mint` | Refresh expiring CDN tokens (daemon, or one album with `-a ID`) |
+| `bunkr-api inspect` | Database reports, staging and maintenance |
+
+Every command has its own `-h`, e.g. `bunkr-api download -h`.
+
+**Scripting notes**
+
+- Commands exit `0` on success (including "nothing to do", such as an empty `--staged` queue), `1` on a runtime failure (album or file not found), `2` on a usage error, and `130` when interrupted.
+- When no source is given, `download` and `stream` browse interactively *only* on a terminal; under cron or a pipe they exit `2` with a message instead of waiting for input.
+- The pre-subcommand binaries (`bunkr-scrape`, `bunkr-download`, `bunkr-stream`, `bunkr-inspect`, `bunkr-mint`) still work as aliases for the matching subcommand.
 
 ### Python API
 
@@ -153,10 +174,11 @@ asyncio.run(main())
 <details open>
 <summary><h3>Main Dashboard Interface (`bunkr-api`)</h3></summary>
 
-The primary entry point of the toolkit. It serves as an interactive hub for managing your entire media catalog. It is designed to intelligently handle inputs, whether you want to browse your collection, jump to a specific album, or import json metadata files.
+The primary entry point of the toolkit. Run with no arguments it opens an interactive hub for managing your entire media catalog; with a subcommand it runs that one task and exits (see the sections below).
 
 ```sh
-bunkr-api [OPTIONS] [PATH/ID]
+bunkr-api                  # interactive dashboard
+bunkr-api <command> ...    # scrape | download | stream | open | import | mint | inspect
 ```
 
 **Common Examples:**
@@ -166,17 +188,13 @@ bunkr-api [OPTIONS] [PATH/ID]
 bunkr-api
 
 # Jump directly to a specific album detail view by its Database ID
-bunkr-api --db-id 17
-# OR simply (legacy support)
-bunkr-api 17
+bunkr-api open 17
 
 # Import a local JSON metadata file and view it immediately
-bunkr-api -i ./album_metadata.json
-# OR simply drop the file onto the terminal
-bunkr-api "./path/to/metadata.json"
+bunkr-api import ./album_metadata.json
 
-# Perform a quick search and resolution directly from the launch command
-bunkr-api "Natalie Roush" --mode broad --per 40 --sort latest
+# Search and resolve an album directly from the command line
+bunkr-api scrape "Natalie Roush" --mode broad --per 40 --sort latest
 ```
 
 **Main Catalog Commands:**
@@ -190,7 +208,7 @@ Inside the main menu, use these single-character commands:
 | `d` | **Delete**: Remove albums from your database (supports single IDs, lists, or ranges). |
 | `q` | **Quit**: Safely exit the application. |
 
-**The [交互 Engine] Detail View:**
+**The Album Detail View:**
 
 Once inside an album, the "Action Context" menu allows for granular media control:
 
@@ -202,7 +220,7 @@ Once inside an album, the "Action Context" menu allows for granular media contro
 6.  **Stage/Unstage**: Flag specific items (or the whole album) for later batch retrieval.
 7.  **Navigation (`n`/`p`)**: Flip through pages of large asset inventories.
 
-> **Intelligent Routing**: `bunkr-api` prioritizes its arguments. If it detects a path ending in `.json`, it imports it. If it detects a number, it jumps to that ID. Otherwise, it treats the input as a search term to launch the scraper.
+> **Upgrading from the bare-argument form?** `bunkr-api 17`, `bunkr-api "query"`, `bunkr-api --db-id 17` and `bunkr-api -i file.json` still work for now: they are translated to `open`, `scrape` and `import` with a deprecation note on stderr. Prefer the explicit subcommands in scripts.
 
 ### Why this command is the best choice for users:
 1.  **Centralized Control**: You never need to leave this interface to perform 99% of your tasks.
@@ -214,31 +232,31 @@ Once inside an album, the "Action Context" menu allows for granular media contro
 ---
 
 <details>
-<summary><h3>Standalone Downloader (`bunkr-download`)</h3></summary>
+<summary><h3>Downloader (`bunkr-api download`)</h3></summary>
 
 A high-performance retrieval engine that utilizes a multi-threaded worker pool and the `yt-dlp` backend to maximize your bandwidth. It handles token resolution and directory organization automatically.
 
 ```sh
-bunkr-download [OPTIONS]
+bunkr-api download [OPTIONS]
 ```
 
 **Common Examples:**
 
 ```sh
 # Download an entire album using 5 concurrent workers
-bunkr-download --db-id 17 --workers 5
+bunkr-api download --db-id 17 --workers 5
 
 # Download a specific range of files (e.g., first five files)
-bunkr-download --db-id 17 --number 1-5
+bunkr-api download --db-id 17 --number 1-5
 
 # The Triage Workflow: Retry all files currently marked as 'FAILED' in the DB
-bunkr-download --triage --workers 3
+bunkr-api download --triage --workers 3
 
 # The Staged Workflow: Download everything globally marked as 'STAGED'
-bunkr-download --staged
+bunkr-api download --staged
 
 # Point a download to a specific external hard drive path
-bunkr-download --db-id 17 -o "D:/Media/Archive"
+bunkr-api download --db-id 17 -o "D:/Media/Archive"
 ```
 
 **Available Options:**
@@ -253,11 +271,11 @@ bunkr-download --db-id 17 -o "D:/Media/Archive"
 | `--triage` | Automatically aggregate and retry all items with a `FAILED` download status. |
 | `-i, --input` | Path to a local legacy JSON file to download without using the database. |
 
-> **Interactive Mode**: If you run `bunkr-download` without any arguments, it launches a catalog browser identical to the main dashboard, allowing you to pick an album and specify workers visually.
+> **Interactive Mode**: If you run `bunkr-api download` in a terminal without choosing a source (`--db-id`, `--staged`, `--triage`, `-i`), it launches a catalog browser identical to the main dashboard, allowing you to pick an album and specify workers visually. Without a terminal (cron, pipes) it exits with an error instead of waiting for input. The source options are mutually exclusive.
 
-### Why this standalone command is useful:
+### Why this command is useful:
 1.  **Error Recovery**: The `--triage` flag is the fastest way to clean up a catalog that had network interruptions during a large batch.
-2.  **Automation**: It is perfect for headless environments or cron jobs (e.g., `bunkr-download --staged` running every night).
+2.  **Automation**: It is perfect for headless environments or cron jobs (e.g., `bunkr-api download --staged` running every night).
 3.  **Resource Management**: You can precisely control system load by adjusting the `--workers` flag based on your current internet speed and CPU availability.
 
 </details>
@@ -265,28 +283,28 @@ bunkr-download --db-id 17 -o "D:/Media/Archive"
 ---
 
 <details>
-<summary><h3>Standalone Streamer (`bunkr-stream`)</h3></summary>
+<summary><h3>Streamer (`bunkr-api stream`)</h3></summary>
 
 Stream content directly to your media player without downloading. This command automatically triggers the "Escape Hatch" to refresh any expired tokens before playback starts.
 
 ```sh
-bunkr-stream --db-id ID [OPTIONS]
+bunkr-api stream --db-id ID [OPTIONS]
 ```
 
 **Common Examples:**
 
 ```sh
 # Stream an entire album by its Database ID
-bunkr-stream --db-id 17
+bunkr-api stream --db-id 17
 
 # Stream a specific selection (e.g., tracks 1, 5, and 10 through 15)
-bunkr-stream --db-id 17 --number 1,5,10-15
+bunkr-api stream --db-id 17 --number 1,5,10-15
 
 # Force playback in VLC instead of the default MPV
-bunkr-stream --db-id 17 --player vlc
+bunkr-api stream --db-id 17 --player vlc
 
 # Stream everything currently marked as 'STAGED' in your database
-bunkr-stream --staged
+bunkr-api stream --staged
 ```
 
 **Available Options:**
@@ -300,38 +318,38 @@ bunkr-stream --staged
 
 > **Note on MPV**: When using MPV, `bunkr-api` opens a JSON IPC server. This allows the terminal to show you exactly which track is playing, the current timestamp, and the buffer/cache duration in real-time.
 
-### Why this standalone command is useful:
+### Why this command is useful:
 1. **Low Latency**: It bypasses the Main Menu logic, allowing you to start video playback in one command.
 2. **Headless Maintenance**: If you know an album ID, you can start a stream without ever seeing the catalog list.
-3. **Staging Workflow**: You can spend time "Staging" items via `bunkr-api` or `bunkr-inspect`, and then later just run `bunkr-stream --staged` to play your curated queue.
+3. **Staging Workflow**: You can spend time "Staging" items via `bunkr-api` or `bunkr-api inspect`, and then later just run `bunkr-api stream --staged` to play your curated queue.
 
 </details>
 
 ---
 
 <details>
-<summary><h3>Standalone Scraper (`bunkr-scrape`)</h3></summary>
+<summary><h3>Scraper (`bunkr-api scrape`)</h3></summary>
 
 A deep-resolution engine designed to discover albums, extract asset metadata, and synchronize findings with your local database. Bypasses detection and provides real-time feedback during the resolution process.
 
 ```sh
-bunkr-scrape [QUERY] [OPTIONS]
+bunkr-api scrape [QUERY] [OPTIONS]
 ```
 
 **Common Examples:**
 
 ```sh
 # Search for a creator and enter the interactive selection menu
-bunkr-scrape "InpossibleOreo"
+bunkr-api scrape "InpossibleOreo"
 
 # Perform a strict search with high result volume and custom sorting
-bunkr-scrape "Natalie" --mode strict --per 60 --sort mostfiles
+bunkr-api scrape "Natalie" --mode strict --per 60 --sort mostfiles
 
 # Browse trending videos from the last 24 hours
-bunkr-scrape --top videos
+bunkr-api scrape --top videos
 
 # Archive metadata to a specific folder without using the default export path
-bunkr-scrape "CreatorName" --save-json --output "C:/Backups/Bunkr_Metadata"
+bunkr-api scrape "CreatorName" --save-json --output "C:/Backups/Bunkr_Metadata"
 ```
 
 **Available Options:**
@@ -342,14 +360,16 @@ bunkr-scrape "CreatorName" --save-json --output "C:/Backups/Bunkr_Metadata"
 | `-m, --mode` | Filtering execution mode: `broad`, `strict`, `fuzzy`, `substring`, `whole`. |
 | `-p, --per` | Total results requested per page: `20`, `40`, `60`, `100`. |
 | `-s, --sort` | Result array sorting metric: `latest`, `oldest`, `mostfiles`. |
-| `-t, --top` | Crawl trending layout categories: `albums`, `videos`, `files`, `images`. |
+| `-t, --top [CATEGORY]` | Browse trending instead of searching: `albums`, `videos`, `files`, `images` (omit the category to be asked). Cannot be combined with a query. |
 | `--save-json` | Export the resolved album metadata to a `.json` file. |
 | `-o, --output` | Override the default directory for JSON exports. |
 
-> **Deep Resolution Intelligence**: Unlike basic scrapers, `bunkr-scrape` performs a deep resolution. It navigates into your selected album, parses the internal JavaScript state, and extracts the **True IDs** required for streaming and downloading.
+> **After the selection**: once you pick an album it is cataloged in the database and its detail view opens, so you can stream, download or stage it straight away.
 
-### Why this standalone command is useful:
-1.  **Direct Cataloging**: It is the primary way to "feed" your database. Any album resolved here becomes immediately available in `bunkr-api`, `bunkr-download`, and `bunkr-stream`.
+> **Deep Resolution Intelligence**: Unlike basic scrapers, `bunkr-api scrape` performs a deep resolution. It navigates into your selected album, parses the internal JavaScript state, and extracts the **True IDs** required for streaming and downloading.
+
+### Why this command is useful:
+1.  **Direct Cataloging**: It is the primary way to "feed" your database. Any album resolved here becomes immediately available in `bunkr-api`, `bunkr-api download`, and `bunkr-api stream`.
 2.  **Metadata Archival**: By using `--save-json`, you can create a portable snapshot of an album's contents (including original filenames and sizes) before a link potentially goes dead.
 3.  **Bypass Navigation**: If you know exactly what you are looking for, flags like `--mode strict` and `--sort mostfiles` get you to the correct result much faster than manual browsing.
 
@@ -358,34 +378,34 @@ bunkr-scrape "CreatorName" --save-json --output "C:/Backups/Bunkr_Metadata"
 ---
 
 <details>
-<summary><h3>System Management (`bunkr-inspect`)</h3></summary>
+<summary><h3>System Management (`bunkr-api inspect`)</h3></summary>
 
-The "Swiss Army Knife" for your local database. `bunkr-inspect` allows you to generate reports, manage staging queues, and perform database maintenance or schema migrations without writing raw SQL.
+The "Swiss Army Knife" for your local database. `bunkr-api inspect` allows you to generate reports, manage staging queues, and perform database maintenance or schema migrations without writing raw SQL.
 
 ```sh
-bunkr-inspect [COMMAND] [TARGET] [OPTIONS]
+bunkr-api inspect [COMMAND] [TARGET] [OPTIONS]
 ```
 
 **Common Examples:**
 
 ```sh
 # View a global summary of your database health and pipeline metrics
-bunkr-inspect view dashboard
+bunkr-api inspect view dashboard
 
 # Get a detailed per-album breakdown of completion % and total sizes
-bunkr-inspect view albums
+bunkr-api inspect view albums
 
 # Dump every internal field for a specific album (useful for debugging IDs)
-bunkr-inspect view album --id 11
+bunkr-api inspect view album --id 11
 
 # Stage a range of assets globally for the next download run
-bunkr-inspect stage asset 50-100
+bunkr-api inspect stage asset 50-100
 
 # Repair metadata drift: Recompute file counts and aggregate sizes from actual records
-bunkr-inspect db --recount
+bunkr-api inspect db --recount
 
 # Permanently delete specific albums and their associated file records
-bunkr-inspect db --wipe 12,15-20
+bunkr-api inspect db --wipe 12,15-20
 ```
 
 **Available Sub-Commands:**
@@ -401,7 +421,7 @@ bunkr-inspect db --wipe 12,15-20
 | `[table_name]` | Performs a raw dump of any table (e.g., `assets` or `system_config`). |
 
 #### 2. `stage` (Queue Management)
-Used to flag items for batch actions in `bunkr-download` or `bunkr-stream`.
+Used to flag items for batch actions in `bunkr-api download` or `bunkr-api stream`.
 *   **Targets**: `album` (cascades to all files) or `asset` (individual files).
 *   **Selection**: Supports IDs, comma-separated lists, ranges, or `all`.
 *   **Options**: Use `--off` to remove the staging flag.
@@ -417,7 +437,7 @@ Used to flag items for batch actions in `bunkr-download` or `bunkr-stream`.
 
 > **Raw Table Dumps**: You can filter any raw table view using `--search "text"` or change the output volume with `--limit 50` or `--all`.
 
-### Why this standalone command is useful:
+### Why this command is useful:
 1.  **Data Integrity**: If the scraper crashes mid-way, `--recount` ensures your dashboard doesn't show "33 files" when only 10 were successfully cataloged.
 2.  **Audit Logs**: `view expiring` helps you predict which downloads might fail before you even start them.
 3.  **Schema Evolution**: As the project grows, `add-column` allows you to update your local database structure without losing your existing history.
@@ -427,12 +447,12 @@ Used to flag items for batch actions in `bunkr-download` or `bunkr-stream`.
 ---
 
 <details>
-<summary><h3>Token Maintenance (`bunkr-mint`)</h3></summary>
+<summary><h3>Token Maintenance (`bunkr-api mint`)</h3></summary>
 
-A dedicated maintenance utility designed to keep your media library "hot." Because Bunkr CDN links use 2-hour time-limited expiration (`ex`) timestamps, they eventually stop working. `bunkr-mint` automates the process of fetching fresh signatures using the stored **True IDs** in your database.
+A dedicated maintenance utility designed to keep your media library "hot." Because Bunkr CDN links use 2-hour time-limited expiration (`ex`) timestamps, they eventually stop working. `bunkr-api mint` automates the process of fetching fresh signatures using the stored **True IDs** in your database.
 
 ```sh
-bunkr-mint [OPTIONS]
+bunkr-api mint [OPTIONS]
 ```
 
 **Common Examples:**
@@ -440,10 +460,10 @@ bunkr-mint [OPTIONS]
 ```sh
 # Launch the background daemon
 # This will poll your entire database every 60s and refresh tokens near expiry
-bunkr-mint
+bunkr-api mint
 
 # Perform a one-shot targeted refresh for a specific album and then exit
-bunkr-mint --album-id 17
+bunkr-api mint --album-id 17
 ```
 
 **Available Options:**
@@ -455,15 +475,15 @@ bunkr-mint --album-id 17
 
 **The "Escape Hatch" Workflow:**
 
-While the main `bunkr-api` dashboard triggers an automated "Escape Hatch" refresh when you start a stream or download, running `bunkr-mint` in a separate terminal window is the recommended workflow for heavy users.
+While the main `bunkr-api` dashboard triggers an automated "Escape Hatch" refresh when you start a stream or download, running `bunkr-api mint` in a separate terminal window is the recommended workflow for heavy users.
 
 *   **Concurrency**: Uses a semaphore-controlled worker pool to refresh dozens of tokens simultaneously without hitting rate limits.
 *   **Progress Tracking**: Features a real-time `Rich` progress bar and spinner so you can see exactly which assets are being updated.
 *   **Database Sync**: Automatically updates the `signed_cdn_url` and `token_expiry_timestamp` columns in your SQLite database.
 
-> **Pro Tip**: If you are planning a massive download session (100+ files), run `bunkr-mint` in the background first to ensure every link is valid before the download engine starts.
+> **Pro Tip**: If you are planning a massive download session (100+ files), run `bunkr-api mint` in the background first to ensure every link is valid before the download engine starts.
 
-### Why this standalone command is useful:
+### Why this command is useful:
 1.  **Continuous Uptime**: Keeps your catalog ready for instant streaming at any time, even weeks after the initial scrape.
 2.  **Headless Operations**: Can be run on a server or a separate monitor to act as a "watchdog" for your media library.
 3.  **Low Overhead**: The daemon stays idle most of the time, only consuming network resources when tokens are actually nearing their expiration window (default 10 minutes).
@@ -506,7 +526,7 @@ api = BunkrAPI()  # uses the same ~/.bunkr_api/media_tracker.db as the CLI tools
 | Method | Description |
 | :--- | :--- |
 | `download_album(album_id, workers=3, output_dir=...)` | Multi-threaded download for a whole album. Raises `ValueError` if the album doesn't exist. |
-| `download_staged(workers=3, output_dir=...)` | Downloads everything currently flagged as staged (see `bunkr-inspect stage` or the dashboard's `6` action). A no-op if nothing is staged. |
+| `download_staged(workers=3, output_dir=...)` | Downloads everything currently flagged as staged (see `bunkr-api inspect stage` or the dashboard's `6` action). A no-op if nothing is staged. |
 | `retry_failed(workers=3, output_dir=...)` | Retries every asset currently marked `FAILED`. A no-op if nothing has failed. |
 | `stream_album(album_id, indices_spec="all", player="mpv")` | Resolves tokens and launches `mpv`/`vlc` for the given selection. Raises `ValueError` if the album has no assets. |
 
@@ -597,7 +617,7 @@ async def nightly_maintenance():
     # Keep every token in the database fresh
     await api.refresh_tokens()
 
-    # Pick up anything you staged earlier via `bunkr-inspect stage` or the dashboard
+    # Pick up anything you staged earlier via `bunkr-api inspect stage` or the dashboard
     await api.download_staged(workers=4)
 
     # Give yesterday's network blips another chance
@@ -659,9 +679,9 @@ The application stores all data in a hidden directory in your user profile to en
 *   **SQLite Database**: `~/.bunkr_api/media_tracker.db`
 *   **Logs**: `~/.bunkr_api/logs/`
 *   **Default Downloads**: `~/Downloads/bunkr_downloads/`
-*   **Default JSON Exports**: `~/Downloads/bunkr_downloads/jsons/` Used by both `bunkr-api --save-json` and `bunkr-scrape --save-json` when `-o/--output` isn't given.
+*   **Default JSON Exports**: `~/Downloads/bunkr_downloads/jsons/` Used by `bunkr-api scrape --save-json` when `-o/--output` isn't given.
 
-> **Pro Tip**: Every command that writes files (`bunkr-scrape --save-json`, `bunkr-download`, etc.) accepts an `-o/--output` flag to override its destination for that run.
+> **Pro Tip**: Every command that writes files (`bunkr-api scrape --save-json`, `bunkr-api download`, etc.) accepts an `-o/--output` flag to override its destination for that run.
 
 ---
 

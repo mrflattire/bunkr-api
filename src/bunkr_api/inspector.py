@@ -1,5 +1,6 @@
 import argparse
 import sqlite3
+import sys
 import time
 from contextlib import closing
 
@@ -404,27 +405,26 @@ class Inspector:
 ## CLI ENTRY POINT
 
 
-def main():
-    insp = Inspector()
-    parser = argparse.ArgumentParser(prog="bunkr-inspect", description="Bunkr DB Management Toolkit")
-    subparsers = parser.add_subparsers(dest="command", metavar="{view,stage,db}")
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Attach the 'inspect' sub-commands to *parser* (used by `bunkr-api inspect`)."""
+    subparsers = parser.add_subparsers(dest="inspect_cmd", metavar="{view,stage,db}")
 
     # VIEW COMMAND
     view = subparsers.add_parser(
-        "view", help="View album & file details (bunkr-inspect view -h for more help)",
+        "view", help="View album & file details (bunkr-api inspect view -h for more help)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  bunkr-inspect view                      quick summary of database\n"
-            "  bunkr-inspect view dashboard            quick summary of database\n"
-            "  bunkr-inspect view albums               per-album summary of completion %, staged count, size\n"
-            "  bunkr-inspect view expiring             albums with tokens expired or expiring soon\n"
-            "  bunkr-inspect view staged               quick view of what is staged, grouped by album\n"
-            "  bunkr-inspect view album --id 5         full detail for album 5 + all its files\n"
-            "  bunkr-inspect view assets               raw dump of the 'assets' (files) table (any table name also works)\n"
-            "  bunkr-inspect view assets --all         every file row, not just the first 10\n"
-            "  bunkr-inspect view assets -n 25         first 25 files rows instead of the default 10\n"
-            "  bunkr-inspect view assets --search foo  only files whose title contains 'foo'\n"
+            "  bunkr-api inspect view                      quick summary of database\n"
+            "  bunkr-api inspect view dashboard            quick summary of database\n"
+            "  bunkr-api inspect view albums               per-album summary of completion %, staged count, size\n"
+            "  bunkr-api inspect view expiring             albums with tokens expired or expiring soon\n"
+            "  bunkr-api inspect view staged               quick view of what is staged, grouped by album\n"
+            "  bunkr-api inspect view album --id 5         full detail for album 5 + all its files\n"
+            "  bunkr-api inspect view assets               raw dump of the 'assets' (files) table (any table name also works)\n"
+            "  bunkr-api inspect view assets --all         every file row, not just the first 10\n"
+            "  bunkr-api inspect view assets -n 25         first 25 files rows instead of the default 10\n"
+            "  bunkr-api inspect view assets --search foo  only files whose title contains 'foo'\n"
         ),
     )
     view.add_argument(
@@ -447,16 +447,16 @@ def main():
 
     # STAGE COMMAND
     stage = subparsers.add_parser(
-        "stage", help="Stage (or unstage) albums or files(assets) for download/streaming (bunkr-inspect stage -h for more help)",
+        "stage", help="Stage (or unstage) albums or files(assets) for download/streaming (bunkr-api inspect stage -h for more help)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  bunkr-inspect stage album 5             stage album 5 (cascades to all its assets)\n"
-            "  bunkr-inspect stage album 5 --off       unstage album 5 (cascades too)\n"
-            "  bunkr-inspect stage asset 14            stage a single file (asset) by id\n"
-            "  bunkr-inspect stage asset 14,15,22      stage a comma-separated list of asset ids\n"
-            "  bunkr-inspect stage asset 10-20         stage a range of asset ids, inclusive\n"
-            "  bunkr-inspect stage asset all           stage every asset in the database\n"
+            "  bunkr-api inspect stage album 5             stage album 5 (cascades to all its assets)\n"
+            "  bunkr-api inspect stage album 5 --off       unstage album 5 (cascades too)\n"
+            "  bunkr-api inspect stage asset 14            stage a single file (asset) by id\n"
+            "  bunkr-api inspect stage asset 14,15,22      stage a comma-separated list of asset ids\n"
+            "  bunkr-api inspect stage asset 10-20         stage a range of asset ids, inclusive\n"
+            "  bunkr-api inspect stage asset all           stage every asset in the database\n"
         ),
     )
     stage.add_argument(
@@ -475,18 +475,18 @@ def main():
 
     # DB COMMAND
     db_cmd = subparsers.add_parser(
-        "db", help="DB maintenance operations: wipe, nuke, raw SQL, schema changes (bunkr-inspect db -h for more help)",
+        "db", help="DB maintenance operations: wipe, nuke, raw SQL, schema changes (bunkr-api inspect db -h for more help)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  bunkr-inspect db --wipe                  delete ALL albums+assets, keep config, prompts first\n"
-            "  bunkr-inspect db --wipe 12,13            delete only albums 12 and 13 (and their assets)\n"
-            "  bunkr-inspect db --wipe 7-9 -y           same, but skip the confirmation prompt\n"
-            "  bunkr-inspect db --nuke                  factory reset: drops every table, including config\n"
-            "  bunkr-inspect db --exec \"DELETE FROM assets WHERE download_status='FAILED';\"\n"
-            "  bunkr-inspect db --add-column assets:true_file_id:INTEGER\n"
-            "  bunkr-inspect db --drop-column assets:true_file_id -y\n"
-            "  bunkr-inspect db --recount               repair albums.file_count + aggregate_size from actual assets\n"
+            "  bunkr-api inspect db --wipe                  delete ALL albums+assets, keep config, prompts first\n"
+            "  bunkr-api inspect db --wipe 12,13            delete only albums 12 and 13 (and their assets)\n"
+            "  bunkr-api inspect db --wipe 7-9 -y           same, but skip the confirmation prompt\n"
+            "  bunkr-api inspect db --nuke                  factory reset: drops every table, including config\n"
+            "  bunkr-api inspect db --exec \"DELETE FROM assets WHERE download_status='FAILED';\"\n"
+            "  bunkr-api inspect db --add-column assets:true_file_id:INTEGER\n"
+            "  bunkr-api inspect db --drop-column assets:true_file_id -y\n"
+            "  bunkr-api inspect db --recount               repair albums.file_count + aggregate_size from actual assets\n"
         ),
     )
     db_cmd.add_argument("--wipe", nargs="?", const="all", default=None,
@@ -498,25 +498,29 @@ def main():
     db_cmd.add_argument("--recount", action="store_true", help="Repair albums.file_count and aggregate_size by recomputing both from actual assets")
     db_cmd.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts (for --wipe/--nuke/--drop-column)")
 
-    args = parser.parse_args()
 
-    if args.command == "view":
+def run(args: argparse.Namespace) -> int:
+    insp = Inspector()
+
+    if args.inspect_cmd == "view":
         if args.target == "dashboard": insp.display_dashboard()
         elif args.target == "albums": insp.display_albums()
         elif args.target == "expiring": insp.display_expiring()
         elif args.target == "staged": insp.display_staged()
         elif args.target == "album":
-            if not args.id: console.print("[red]Error: --id required[/red]"); return
+            if not args.id:
+                console.print("[red]Error: --id required for 'view album' (e.g. --id 5)[/red]")
+                return 2
             insp.display_album_detail(args.id)
         else:
             # this is not a known keyword. it as a real table name.
             insp.display_table(args.target, limit=args.limit, search=args.search, show_all=args.all)
 
-    elif args.command == "stage":
+    elif args.inspect_cmd == "stage":
         state = 0 if args.off else 1
         insp.toggle_staging(args.target, args.selection, state)
 
-    elif args.command == "db":
+    elif args.inspect_cmd == "db":
         if args.nuke: insp.nuke()
         elif args.wipe is not None: insp.wipe(args.wipe, args.yes)
         elif args.add_column: insp.add_column(args.add_column)
@@ -527,8 +531,22 @@ def main():
                 res = conn.execute(args.exec)
                 conn.commit()
                 console.print(f"[green]Executed. Rows affected: {res.rowcount}[/green]")
+        else:
+            console.print(
+                "[red]Error: 'db' needs an action: --wipe, --nuke, --exec, --add-column, "
+                "--drop-column or --recount (see 'bunkr-api inspect db -h')[/red]"
+            )
+            return 2
     else:
         insp.display_dashboard()
+    return 0
+
+
+def main() -> int:
+    """Legacy alias: `bunkr-inspect ...` is `bunkr-api inspect ...`."""
+    from .cli import main as cli_main
+    return cli_main(["inspect", *sys.argv[1:]])
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
